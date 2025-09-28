@@ -1,0 +1,47 @@
+# --- Python & Virtual Environments ---
+# Ignore the virtual environment directory created by Poetry/venv
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# --- Poetry ---
+# For a solo project, it's fine to either commit or ignore the lock file.
+# We'll ignore it by default to keep the repo clean.
+poetry.lock
+
+# --- Scrapy ---
+# Ignore Scrapy's project state directory
+.scrapy/
+
+# --- Data Files ---
+# Ignore all raw and processed data files. These can be large and should not be in Git.
+*.json
+*.jsonl
+*.csv
+*.parquet
+*.html
+
+# --- IDE & Editor Config ---
+# Visual Studio Code
+.vscode/
+# PyCharm
+.idea/
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# --- Environment Variables ---
+# Ignore local environment variables file (for API keys, etc.)
+.env
+
+# --- Operating System Files ---
+# macOS
+.DS_Store
+# Windows
+Thumbs.db
+
+# --- Jupyter Notebook ---
+# Ignore notebook checkpoints
+.ipynb_checkpoints
