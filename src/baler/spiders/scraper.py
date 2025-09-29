@@ -47,8 +47,10 @@ class PitchforkSpider(scrapy.Spider):
         await page.close()
 
     def parse_review(self, response):
-        artist_name = response.css('div[class*="SplitScreenContentHeaderArtist"]::text').get()
-        album_title = response.css('h1[data-testid="ContentHeaderHed"] em::text').get()
+        artist_name = response.css('div[class*="SplitScreenContentHeaderArtist"] a::text').get()
+        if not artist_name:
+            artist_name = response.css('div[class*="SplitScreenContentHeaderArtist"]::text').get()
+        album_title = response.xpath('string(//h1[@data-testid="ContentHeaderHed"])').get()
         score_str = response.css('p[class*="Rating-"]::text').get()
 
         best_new_music_tag = response.css('p[class*="BestNewMusicText-"]').get()
@@ -56,6 +58,14 @@ class PitchforkSpider(scrapy.Spider):
 
         author = response.css('a[href*="/staff/"]::text').get()
         release_year = response.css('time::text').get()
+        # If that fails, use the selector for the alternate template
+        if not release_year:
+            info_items = response.css('div[class*="InfoSliceContent"] li::text').getall()
+            for item in info_items:
+                if item and (item.strip().startswith('19') or item.strip().startswith('20')):
+                    release_year = item
+                    break # Stop once we've found it
+
         paragraphs = response.css('div[class*="body__inner-container"] p::text').getall()
         review_text = "\n".join(paragraphs)
 
