@@ -45,3 +45,5 @@ Thumbs.db
 # --- Jupyter Notebook ---
 # Ignore notebook checkpoints
 .ipynb_checkpoints
+
+chroma_db/
