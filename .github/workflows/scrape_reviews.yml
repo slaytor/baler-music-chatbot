@@ -1,0 +1,54 @@
+name: Scrape Pitchfork Reviews Daily
+
+on:
+  schedule:
+    # Runs at 00:00 UTC every day (adjust cron timing as needed)
+    - cron: '0 0 * * *'
+  workflow_dispatch: # Allows manual triggering from the Actions tab
+
+env:
+  AWS_REGION: us-east-1
+  S3_BUCKET_NAME: baler-music-chatbot
+  OUTPUT_FILENAME: reviews.jsonl
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+        with:
+          virtualenvs-create: true
+          virtualenvs-in-project: true
+
+      - name: Install dependencies
+        run: poetry install --no-interaction --no-root
+
+      - name: Install Playwright browsers
+        run: poetry run playwright install --with-deps chromium
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Run Scrapy Spider
+        run: |
+          # Navigate to the src directory where scrapy.cfg is located
+          cd src
+          # Run the crawl, saving the output locally in the runner
+          poetry run scrapy crawl pitchfork_reviews -o ../${{ env.OUTPUT_FILENAME }}
+
+      - name: Upload reviews to S3
+        run: |
+          aws s3 cp ${{ env.OUTPUT_FILENAME }} s3://${{ env.S3_BUCKET_NAME }}/${{ env.OUTPUT_FILENAME }}
