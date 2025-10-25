@@ -1,22 +1,31 @@
+import os
 import httpx
+import json
 import chromadb
 from fastapi import FastAPI
 from pydantic import BaseModel
 from sentence_transformers import SentenceTransformer
 from typing import List, Any
 from dotenv import load_dotenv
-from auth_util import get_gcp_auth_token
+from pathlib import Path
+# --- THE FIX: Import CORSMiddleware ---
+from fastapi.middleware.cors import CORSMiddleware
+
+
+# Import the shared authentication function
+from .auth_util import get_gcp_auth_token
 
 # Load environment variables from .env file
 load_dotenv()
 
 
-# Remember your IDE's formatting preference for blank lines
 # --- CONFIGURATION ---
 MODEL_NAME = 'all-MiniLM-L6-v2'
-DB_PATH = "./chroma_db"
-COLLECTION_NAME = "pitchfork_reviews"
 GEMINI_MODEL = "gemini-2.5-flash-preview-05-20"
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+DB_PATH = PROJECT_ROOT / "chroma_db"
+COLLECTION_NAME = "pitchfork_reviews"
+
 
 # --- INITIALIZATION ---
 print("Loading embedding model...")
@@ -24,13 +33,23 @@ model = SentenceTransformer(MODEL_NAME)
 print("Model loaded.")
 
 print("Connecting to ChromaDB...")
-client = chromadb.PersistentClient(path=DB_PATH)
+client = chromadb.PersistentClient(path=str(DB_PATH))
 collection = client.get_collection(name=COLLECTION_NAME)
 print("ChromaDB connection successful.")
 
 app = FastAPI(
     title="Baler Music Recommendation API",
     description="A chatbot for nuanced music recommendations from Pitchfork reviews.",
+)
+
+# --- THE FIX: Add CORS middleware to allow browser requests ---
+# This allows your web browser (running on a different "origin") to make requests to your API
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allows all origins
+    allow_credentials=True,
+    allow_methods=["*"],  # Allows all methods
+    allow_headers=["*"],  # Allows all headers
 )
 
 
