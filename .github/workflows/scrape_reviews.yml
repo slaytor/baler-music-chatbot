@@ -44,11 +44,14 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
+      # --- THE FIX: Simplified JMESPath and added shell check for null ---
       - name: Find and download latest previous scrape
-        id: download_previous # Give the step an ID to access its outputs
+        id: download_previous
         run: |
-          LATEST_FILE=$(aws s3api list-objects-v2 --bucket ${{ env.S3_BUCKET_NAME }} --prefix ${{ env.S3_DAILY_PREFIX }}/ --query 'sort_by(Contents, &LastModified)[-1].Key // `null`' --output text)
-          # Check if LATEST_FILE is null or empty
+          # Use a simpler query that returns 'null' if no objects found
+          LATEST_FILE=$(aws s3api list-objects-v2 --bucket ${{ env.S3_BUCKET_NAME }} --prefix ${{ env.S3_DAILY_PREFIX }}/ --query 'sort_by(Contents, &LastModified)[-1].Key' --output text)
+          
+          # Explicitly check if the result is the string "null" or empty
           if [ "$LATEST_FILE" = "null" ] || [ -z "$LATEST_FILE" ]; then
             echo "No previous scrape file found in S3. Performing full scrape."
             echo "previous_file_path=" >> $GITHUB_OUTPUT 
@@ -58,13 +61,11 @@ jobs:
             echo "previous_file_path=${{ env.PREVIOUS_DAY_FILENAME }}" >> $GITHUB_OUTPUT
             echo "Downloaded previous day's data."
           fi
-        continue-on-error: true # Continue if download fails (e.g., first run)
+        continue-on-error: true
 
       - name: Run Scrapy Spider
         run: |
           cd src
-          # --- THE FIX: Pass the previous file path using -a ---
-          # Use parameter expansion to only add the argument if the path is not empty
           PREVIOUS_ARG=""
           if [[ ! -z "${{ steps.download_previous.outputs.previous_file_path }}" ]]; then
             PREVIOUS_ARG="-a previous_file=../${{ steps.download_previous.outputs.previous_file_path }}"
@@ -73,7 +74,6 @@ jobs:
 
       - name: Upload today's reviews to S3 with date stamp
         run: |
-          # Only upload if the output file was actually created and is not empty
           if [ -s "${{ env.LOCAL_OUTPUT_FILENAME }}" ]; then
             TODAY=$(date +'%Y-%m-%d')
             S3_TARGET_PATH="s3://${{ env.S3_BUCKET_NAME }}/${{ env.S3_DAILY_PREFIX }}/reviews_${TODAY}.jsonl"
@@ -81,6 +81,4 @@ jobs:
             aws s3 cp ${{ env.LOCAL_OUTPUT_FILENAME }} ${S3_TARGET_PATH}
           else
             echo "Scraper output file is empty or does not exist. Skipping S3 upload."
-            # Optionally, fail the job here if an empty scrape is an error
-            # exit 1 
           fi
