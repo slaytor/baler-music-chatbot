@@ -1,6 +1,8 @@
 import scrapy
 from dataclasses import dataclass
 from pathlib import Path
+import json
+from scrapy.exceptions import CloseSpider
 
 
 # Remember your IDE's formatting preference for blank lines
@@ -16,17 +18,38 @@ class ReviewItem:
     release_year: str
 
 
+
 class PitchforkSpider(scrapy.Spider):
     name = "pitchfork_reviews"
 
-    # --- NEW: Allow specifying a start page via command line ---
-    def __init__(self, start_page=1, *args, **kwargs):
+    # --- UPDATED: Accept 'previous_file' argument ---
+    def __init__(self, start_page=1, previous_file=None, *args, **kwargs):
         super(PitchforkSpider, self).__init__(*args, **kwargs)
         self.start_page = int(start_page)
-        # Construct the initial URL based on the start_page
         self.start_urls = [f'https://pitchfork.com/reviews/albums/?page={self.start_page}']
+        self.seen_urls = set()
+        self.stop_scraping = False # Flag to stop pagination
 
-    # --- Changed back to start_requests for argument handling ---
+        # --- NEW: Load URLs from the previous scrape file ---
+        if previous_file and Path(previous_file).exists():
+            self.logger.info(f"Loading previously seen URLs from {previous_file}")
+            try:
+                with open(previous_file, 'r') as f:
+                    for line in f:
+                        try:
+                            review = json.loads(line)
+                            if 'review_url' in review:
+                                self.seen_urls.add(review['review_url'])
+                        except json.JSONDecodeError:
+                            self.logger.warning(f"Could not parse line in {previous_file}: {line.strip()}")
+                self.logger.info(f"Loaded {len(self.seen_urls)} previously seen URLs.")
+            except Exception as e:
+                self.logger.error(f"Error reading previous file {previous_file}: {e}")
+        else:
+            self.logger.info("No previous scrape file provided or found. Performing full scrape.")
+
+
+    # Use start_requests for argument handling
     def start_requests(self):
         for url in self.start_urls:
             yield scrapy.Request(
@@ -37,26 +60,51 @@ class PitchforkSpider(scrapy.Spider):
                 )
             )
 
+
     async def parse(self, response):
         page = response.meta["playwright_page"]
 
         review_links = response.css('a[href^="/reviews/albums/"]')
+        links_processed_count = 0
+
         for link in review_links:
+            # Construct the absolute URL
+            review_url = response.urljoin(link.attrib['href'])
+
+            # --- NEW: Check if we've seen this review before ---
+            if self.seen_urls and review_url in self.seen_urls:
+                self.logger.info(f"Stopping scrape: Encountered previously seen review: {review_url}")
+                self.stop_scraping = True
+                # Optional: Yield the seen item one last time if needed, then break
+                # yield response.follow(link, self.parse_review)
+                break # Stop processing links on this page
+
+            links_processed_count += 1
             yield response.follow(link, self.parse_review)
 
-        # Using XPath for the Next Page link for robustness
-        next_page_link = response.xpath('//span[contains(text(), "Next Page")]/parent::a/@href').get()
-        if next_page_link:
-            yield scrapy.Request(
-                url=response.urljoin(next_page_link),
-                callback=self.parse, # Use self.parse for subsequent pages
-                meta=dict(
-                    playwright=True,
-                    playwright_include_page=True,
+        # --- NEW: Only paginate if the stop flag hasn't been set ---
+        if not self.stop_scraping:
+            next_page_link = response.xpath('//span[contains(text(), "Next Page")]/parent::a/@href').get()
+            if next_page_link:
+                yield scrapy.Request(
+                    url=response.urljoin(next_page_link),
+                    callback=self.parse,
+                    meta=dict(
+                        playwright=True,
+                        playwright_include_page=True,
+                    )
                 )
-            )
+            else:
+                self.logger.info("Reached the last page of reviews.")
+        else:
+            self.logger.info("Stopping pagination because previously scraped reviews were found.")
 
         await page.close()
+
+        # If we stopped scraping because we hit seen URLs, raise CloseSpider
+        if self.stop_scraping:
+             raise CloseSpider('Reached previously scraped reviews.')
+
 
     def parse_review(self, response):
         # Fallback logic for artist name
@@ -77,7 +125,7 @@ class PitchforkSpider(scrapy.Spider):
             info_items = response.css('div[class*="InfoSliceContent"] li::text').getall()
             for item in info_items:
                 if item and (item.strip().startswith('19') or item.strip().startswith('20')):
-                    release_year = item.strip() # Ensure stripping whitespace
+                    release_year = item.strip()
                     break
 
         paragraphs = response.css('div[class*="body__inner-container"] p::text').getall()
@@ -93,5 +141,5 @@ class PitchforkSpider(scrapy.Spider):
             review_url=response.url,
             review_text=review_text.strip(),
             author=author.strip() if author else "N/A",
-            release_year=release_year if release_year else "N/A" # Handle potential None
+            release_year=release_year if release_year else "N/A"
         )

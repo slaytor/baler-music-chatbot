@@ -2,14 +2,16 @@ name: Scrape Pitchfork Reviews Daily
 
 on:
   schedule:
-    # Runs at 00:00 UTC every day (adjust cron timing as needed)
+    # Runs at 00:00 UTC every day
     - cron: '0 0 * * *'
-  workflow_dispatch: # Allows manual triggering from the Actions tab
+  workflow_dispatch: # Allows manual triggering
 
 env:
   AWS_REGION: us-east-1
   S3_BUCKET_NAME: baler-music-chatbot
-  OUTPUT_FILENAME: reviews.jsonl
+  S3_DAILY_PREFIX: daily_scrapes
+  LOCAL_OUTPUT_FILENAME: reviews_today.jsonl
+  PREVIOUS_DAY_FILENAME: reviews_previous.jsonl
 
 jobs:
   scrape:
@@ -42,13 +44,43 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
+      - name: Find and download latest previous scrape
+        id: download_previous # Give the step an ID to access its outputs
+        run: |
+          LATEST_FILE=$(aws s3api list-objects-v2 --bucket ${{ env.S3_BUCKET_NAME }} --prefix ${{ env.S3_DAILY_PREFIX }}/ --query 'sort_by(Contents, &LastModified)[-1].Key // `null`' --output text)
+          # Check if LATEST_FILE is null or empty
+          if [ "$LATEST_FILE" = "null" ] || [ -z "$LATEST_FILE" ]; then
+            echo "No previous scrape file found in S3. Performing full scrape."
+            echo "previous_file_path=" >> $GITHUB_OUTPUT 
+          else
+            echo "Latest file found: $LATEST_FILE"
+            aws s3 cp s3://${{ env.S3_BUCKET_NAME }}/${LATEST_FILE} ${{ env.PREVIOUS_DAY_FILENAME }}
+            echo "previous_file_path=${{ env.PREVIOUS_DAY_FILENAME }}" >> $GITHUB_OUTPUT
+            echo "Downloaded previous day's data."
+          fi
+        continue-on-error: true # Continue if download fails (e.g., first run)
+
       - name: Run Scrapy Spider
         run: |
-          # Navigate to the src directory where scrapy.cfg is located
           cd src
-          # Run the crawl, saving the output locally in the runner
-          poetry run scrapy crawl pitchfork_reviews -o ../${{ env.OUTPUT_FILENAME }}
+          # --- THE FIX: Pass the previous file path using -a ---
+          # Use parameter expansion to only add the argument if the path is not empty
+          PREVIOUS_ARG=""
+          if [[ ! -z "${{ steps.download_previous.outputs.previous_file_path }}" ]]; then
+            PREVIOUS_ARG="-a previous_file=../${{ steps.download_previous.outputs.previous_file_path }}"
+          fi
+          poetry run scrapy crawl pitchfork_reviews ${PREVIOUS_ARG} -o ../${{ env.LOCAL_OUTPUT_FILENAME }}
 
-      - name: Upload reviews to S3
+      - name: Upload today's reviews to S3 with date stamp
         run: |
-          aws s3 cp ${{ env.OUTPUT_FILENAME }} s3://${{ env.S3_BUCKET_NAME }}/${{ env.OUTPUT_FILENAME }}
+          # Only upload if the output file was actually created and is not empty
+          if [ -s "${{ env.LOCAL_OUTPUT_FILENAME }}" ]; then
+            TODAY=$(date +'%Y-%m-%d')
+            S3_TARGET_PATH="s3://${{ env.S3_BUCKET_NAME }}/${{ env.S3_DAILY_PREFIX }}/reviews_${TODAY}.jsonl"
+            echo "Uploading to ${S3_TARGET_PATH}"
+            aws s3 cp ${{ env.LOCAL_OUTPUT_FILENAME }} ${S3_TARGET_PATH}
+          else
+            echo "Scraper output file is empty or does not exist. Skipping S3 upload."
+            # Optionally, fail the job here if an empty scrape is an error
+            # exit 1 
+          fi
