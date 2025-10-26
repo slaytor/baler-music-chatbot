@@ -44,24 +44,25 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      # --- THE FIX: Simplified JMESPath and added shell check for null ---
       - name: Find and download latest previous scrape
         id: download_previous
         run: |
-          # Use a simpler query that returns 'null' if no objects found
           LATEST_FILE=$(aws s3api list-objects-v2 --bucket ${{ env.S3_BUCKET_NAME }} --prefix ${{ env.S3_DAILY_PREFIX }}/ --query 'sort_by(Contents, &LastModified)[-1].Key' --output text)
           
-          # Explicitly check if the result is the string "null" or empty
           if [ "$LATEST_FILE" = "null" ] || [ -z "$LATEST_FILE" ]; then
             echo "No previous scrape file found in S3. Performing full scrape."
+            # --- IMPORTANT: If continue-on-error is false, this branch might require manual intervention on first run ---
             echo "previous_file_path=" >> $GITHUB_OUTPUT 
+            # Optionally signal failure if no previous file is expected after the first run
+            # echo "::error::Expected a previous file but found none." && exit 1 
           else
             echo "Latest file found: $LATEST_FILE"
             aws s3 cp s3://${{ env.S3_BUCKET_NAME }}/${LATEST_FILE} ${{ env.PREVIOUS_DAY_FILENAME }}
             echo "previous_file_path=${{ env.PREVIOUS_DAY_FILENAME }}" >> $GITHUB_OUTPUT
             echo "Downloaded previous day's data."
           fi
-        continue-on-error: true
+        # --- THE CHANGE: Removed continue-on-error: true ---
+        # Now, any failure in this step will stop the workflow.
 
       - name: Run Scrapy Spider
         run: |
@@ -81,4 +82,6 @@ jobs:
             aws s3 cp ${{ env.LOCAL_OUTPUT_FILENAME }} ${S3_TARGET_PATH}
           else
             echo "Scraper output file is empty or does not exist. Skipping S3 upload."
+            # Decide if an empty scrape should fail the job
+            # exit 1 
           fi
