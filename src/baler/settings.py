@@ -16,7 +16,7 @@ ADDONS = {}
 
 
 # Crawl responsibly by identifying yourself (and your website) on the user-agent
-USER_AGENT = "Baler Music Bot (Project for portfolio; contact: sam.bernick.taylor@example.com"
+USER_AGENT = "Baler Music Bot (Project for portfolio; contact: sam.bernick.taylor@gmail.com"
 
 # Obey robots.txt rules
 ROBOTSTXT_OBEY = True
