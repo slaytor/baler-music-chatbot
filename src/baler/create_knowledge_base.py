@@ -24,7 +24,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 DB_PATH = PROJECT_ROOT / "chroma_db"
 RAW_DATA_FILE = PROJECT_ROOT / "reviews.jsonl"
 COLLECTION_NAME = "pitchfork_reviews"
-CONCURRENT_REQUESTS = 10
+CONCURRENT_REQUESTS = 5
 INTER_BATCH_DELAY_SECONDS = 1 # Add a 1-second pause between batches
 
 

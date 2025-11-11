@@ -2,7 +2,6 @@ import scrapy
 from dataclasses import dataclass
 from pathlib import Path
 import json
-from scrapy.exceptions import CloseSpider
 import re # Import regular expressions
 
 
@@ -17,7 +16,6 @@ class ReviewItem:
     review_text: str
     author: str
     release_year: str
-
 
 
 class PitchforkSpider(scrapy.Spider):
@@ -51,7 +49,6 @@ class PitchforkSpider(scrapy.Spider):
         else:
             self.logger.info("No previous scrape file provided or found.")
 
-
     def start_requests(self):
         for url in self.start_urls:
             yield scrapy.Request(
@@ -62,7 +59,6 @@ class PitchforkSpider(scrapy.Spider):
                 )
             )
 
-
     async def parse(self, response):
         page = response.meta["playwright_page"]
         self.pages_crawled += 1
@@ -70,22 +66,19 @@ class PitchforkSpider(scrapy.Spider):
 
         review_links = response.css('a[href^="/reviews/albums/"]')
 
-        # --- THE FIX: Process ALL links on the current page ---
         for link in review_links:
             review_url = response.urljoin(link.attrib['href'])
 
-            # If we've seen this URL before, set the flag but DON'T break
             if self.seen_urls and review_url in self.seen_urls:
                 found_seen_url_on_page = True
-                self.logger.debug(f"Encountered previously seen review (will stop pagination after this page): {review_url}")
-                # Optional: Skip yielding this already-seen review if you only want *new* items
-                # continue
+                self.logger.debug(f"Encountered previously seen review: {review_url}. Skipping.")
+                continue # Skip to the next link
 
-            # Yield the item (either new or potentially re-yielding the first seen one)
+            # This line is now only reached for new reviews
+            self.logger.info(f"Found new review: {review_url}")
             yield response.follow(link, self.parse_review)
 
-        # --- THE FIX: Decide pagination *after* processing all links ---
-        # Stop paginating if we found a seen URL on this page OR reached max_pages
+        # Decide pagination *after* processing all links
         should_stop_pagination = found_seen_url_on_page
 
         if self.max_pages_to_crawl is not None and self.pages_crawled >= self.max_pages_to_crawl:
@@ -112,11 +105,8 @@ class PitchforkSpider(scrapy.Spider):
         else:
              if found_seen_url_on_page:
                  self.logger.info("Stopping pagination because previously scraped reviews were found on this page.")
-             # Max pages log message is handled above
 
         await page.close()
-        # --- REMOVED: No need to explicitly raise CloseSpider here ---
-
 
     def parse_review(self, response):
         # Fallback logic for artist name
