@@ -1,11 +1,24 @@
+import os
 import google.auth
 import google.auth.transport.requests
+from dotenv import load_dotenv
+
+# Import config from our new file
+from . import config
+
+
+# Load .env file and set absolute path for credentials
+load_dotenv(config.ENV_PATH)
+if os.getenv('GOOGLE_APPLICATION_CREDENTIALS'):
+    absolute_cred_path = config.PROJECT_ROOT / os.getenv('GOOGLE_APPLICATION_CREDENTIALS')
+    os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = str(absolute_cred_path)
+else:
+    print("Warning: GOOGLE_APPLICATION_CREDENTIALS not set in .env file.")
 
 
 def get_gcp_auth_token():
     """Generates a GCP auth token from the service account credentials."""
     try:
-        # Using the specific scope required for the Generative Language API
         credentials, project = google.auth.default(
             scopes=['https://www.googleapis.com/auth/generative-language']
         )

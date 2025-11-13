@@ -92,5 +92,3 @@ DOWNLOAD_HANDLERS = {
 }
 
 TWISTED_REACTOR = "twisted.internet.asyncioreactor.AsyncioSelectorReactor"
-
-CLOSESPIDER_ITEMCOUNT = 1000
