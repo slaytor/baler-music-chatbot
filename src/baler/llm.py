@@ -113,6 +113,11 @@ class GeminiClient:
             f"CONTEXT FROM REVIEWS:\n{context_str}\n\n"
             f"USER'S QUERY: '{query_text}'"
         )
+        
+        # --- FINAL DEBUGGING ---
+        print("--- SENDING PROMPT TO GEMINI ---")
+        print(full_prompt)
+        print("---------------------------------")
 
         api_url = f"{self.api_url_base}:streamGenerateContent?alt=sse"
         payload = {"contents": [{"parts": [{"text": full_prompt}]}]}
@@ -132,6 +137,8 @@ class GeminiClient:
                         return
 
                     async for line in response.aiter_lines():
+                        print(f"GEMINI STREAM LINE: {line}")
+                        
                         if line.startswith("data:"):
                             try:
                                 data_str = line[len("data:") :].strip()

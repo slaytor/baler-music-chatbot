@@ -21,7 +21,6 @@ poetry.lock
 *.jsonl
 *.csv
 *.parquet
-*.html
 
 # --- IDE & Editor Config ---
 # Visual Studio Code

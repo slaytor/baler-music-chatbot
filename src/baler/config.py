@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 # --- PROJECT ROOT ---
@@ -14,7 +15,7 @@ CREDENTIALS_PATH = PROJECT_ROOT / CREDENTIALS_FILE_NAME
 
 # --- API CONFIGURATION ---
 GEMINI_MODEL = "gemini-2.5-flash-preview-09-2025"
-TOKEN_LIFESPAN_SECONDS = 45 * 60 # 45 minutes
+TOKEN_LIFESPAN_SECONDS = 45 * 60  # 45 minutes
 
 
 # --- SCRAPER & DATA CONFIG ---
@@ -25,9 +26,11 @@ PROCESSED_FILES_LOG = PROJECT_ROOT / ".processed_s3_files.log"
 
 
 # --- KNOWLEDGE BASE CONFIG ---
-DB_PATH = PROJECT_ROOT / "chroma_db"
+# Connect to ChromaDB over the network
+CHROMA_HOST = os.getenv("CHROMA_HOST", "localhost")
+CHROMA_PORT = int(os.getenv("CHROMA_PORT", "8000"))
 COLLECTION_NAME = "pitchfork_reviews"
-EMBEDDING_MODEL_NAME = 'all-MiniLM-L6-v2'
+EMBEDDING_MODEL_NAME = "all-MiniLM-L6-v2"
 
 
 # --- PIPELINE BATCHING ---

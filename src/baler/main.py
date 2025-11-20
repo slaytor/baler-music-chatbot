@@ -1,9 +1,10 @@
 import json
-
+from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from fastapi.responses import StreamingResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, Field
 
 from .database import VectorDB
 from .llm import GeminiClient
@@ -14,8 +15,6 @@ try:
     llm = GeminiClient()
 except Exception as e:
     print(f"FATAL: Failed to initialize services: {e}")
-    # In a real app, we'd want a more graceful failure
-    # but for this, we'll exit if services can't start.
     exit(1)
 
 app = FastAPI(
@@ -23,6 +22,7 @@ app = FastAPI(
     description="A chatbot for nuanced music recommendations from Pitchfork reviews.",
 )
 
+# --- MIDDLEWARE ---
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -31,11 +31,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Determine the path to the static directory
+static_dir = Path(__file__).parent.parent.parent / "static"
+
+# --- API ENDPOINTS ---
 
 class Query(BaseModel):
-    text: str
+    text: str = Field(..., max_length=1000)
     top_k: int = 5
-
 
 @app.post("/recommend")
 async def get_recommendation_stream(query: Query):
@@ -43,23 +46,24 @@ async def get_recommendation_stream(query: Query):
     Main endpoint for recommendations.
     Orchestrates the RAG process by calling modular services.
     """
-
-    # 1. Search (Retrieve)
     context = db.search(query.text, query.top_k)
-
     if not context:
-
         async def empty_stream():
-            yield json.dumps(
-                {
-                    "response": "Apologies, but none of the reviews in my collection seem to match that particular vibe. Try a different query.",
-                    "sources": [],
-                }
-            ) + "\n"
-
+            # Send the response in two parts to mimic the real stream
+            yield json.dumps({"chunk": "Apologies, but my knowledge base is currently empty. Please run the data ingestion script to populate the database."}) + "\n"
+            yield json.dumps({"sources": []}) + "\n"
         return StreamingResponse(empty_stream(), media_type="application/x-ndjson")
-
-    # 2. Augment & Generate (Stream response)
+        
     return StreamingResponse(
         llm.stream_response(query.text, context), media_type="application/x-ndjson"
     )
+
+# --- UI SERVING ---
+
+@app.get("/")
+async def read_index():
+    """Serves the main index.html file."""
+    return FileResponse(static_dir / "index.html")
+
+# Mount the static directory to serve files like CSS, JS, etc.
+app.mount("/static", StaticFiles(directory=static_dir), name="static")

@@ -1,0 +1,40 @@
+services:
+  # FastAPI Application Service
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      # Maps port 8080 on the host to port 8080 in the container
+      - "8080:8080"
+    environment:
+      # The app will connect to the 'chroma' service on port 8000
+      - CHROMA_HOST=chroma
+      - CHROMA_PORT=8000
+      # Set the path to the credentials file inside the container
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/gcloud-credentials.json
+      # Tell Python where to find the source code
+      - PYTHONPATH=/app/src
+    depends_on:
+      # Ensures that the 'chroma' service is started before the 'app' service
+      - chroma
+    volumes:
+      # Mounts the local 'reviews.jsonl' into the container
+      - ./reviews.jsonl:/app/reviews.jsonl
+      # Mounts the local '.processed_s3_files.log'
+      - ./.processed_s3_files.log:/app/.processed_s3_files.log
+      # Mount the local credentials file into the container at runtime
+      - ./gcloud-credentials.json:/app/gcloud-credentials.json:ro
+      # Mount the migration file
+      - ./enriched_data.jsonl:/app/enriched_data.jsonl
+
+  # ChromaDB Vector Database Service
+  chroma:
+    image: chromadb/chroma:0.5.0
+    volumes:
+      # Persists ChromaDB data on the host machine
+      - chroma_data:/chroma/.chroma/index
+
+volumes:
+  # Defines the named volume for persisting ChromaDB data
+  chroma_data:

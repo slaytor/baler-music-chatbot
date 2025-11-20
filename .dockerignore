@@ -1,0 +1,36 @@
+# Git repository files
+.git
+.gitignore
+
+# Docker files (these are not needed inside the image)
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Python virtual environment
+.venv
+venv
+env
+
+# Python cache files
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+
+# IDE and editor configuration
+.idea/
+.vscode/
+
+# Operating system specific files
+.DS_Store
+
+# Local data and logs that are mounted as volumes
+# or should not be included in the image
+chroma_data/
+reviews.jsonl
+.processed_s3_files.log
+*.log
+
+# Environment files
+.env
