@@ -1,8 +1,9 @@
 import json
+
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from fastapi.middleware.cors import CORSMiddleware
 
 from .database import VectorDB
 from .llm import GeminiClient
@@ -47,15 +48,18 @@ async def get_recommendation_stream(query: Query):
     context = db.search(query.text, query.top_k)
 
     if not context:
-         async def empty_stream():
-             yield json.dumps({
-                 "response": "Apologies, but none of the reviews in my collection seem to match that particular vibe. Try a different query.",
-                 "sources": []
-             }) + "\n"
-         return StreamingResponse(empty_stream(), media_type="application/x-ndjson")
+
+        async def empty_stream():
+            yield json.dumps(
+                {
+                    "response": "Apologies, but none of the reviews in my collection seem to match that particular vibe. Try a different query.",
+                    "sources": [],
+                }
+            ) + "\n"
+
+        return StreamingResponse(empty_stream(), media_type="application/x-ndjson")
 
     # 2. Augment & Generate (Stream response)
     return StreamingResponse(
-        llm.stream_response(query.text, context),
-        media_type="application/x-ndjson"
+        llm.stream_response(query.text, context), media_type="application/x-ndjson"
     )
