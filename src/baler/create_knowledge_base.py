@@ -1,6 +1,5 @@
 import asyncio
 import logging
-import os
 import httpx
 import pandas as pd
 from tqdm import tqdm
@@ -12,9 +11,6 @@ from .utils import chunk_text
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
-# --- MIGRATION CONFIG ---
-MIGRATION_FILE = config.PROJECT_ROOT / "enriched_data.jsonl"
-
 async def main():
     """Main function to orchestrate the knowledge base build."""
     logging.getLogger("chromadb").setLevel(logging.WARNING)
@@ -22,35 +18,6 @@ async def main():
 
     try:
         db = VectorDB()
-    except Exception as e:
-        logging.fatal(f"Failed to initialize database service: {e}")
-        return
-
-    # --- MIGRATION PATH ---
-    if MIGRATION_FILE.exists():
-        logging.warning("*" * 60)
-        logging.warning("!!! MIGRATION MODE DETECTED !!!")
-        logging.warning(f"Found migration file: {MIGRATION_FILE}")
-        logging.warning("This script will now import data from this file WITHOUT making any new API calls.")
-        logging.warning("*" * 60)
-
-        try:
-            enriched_df = pd.read_json(MIGRATION_FILE, lines=True)
-            logging.info(f"Loaded {len(enriched_df)} records from migration file.")
-            
-            db.add_batch(enriched_df)
-            
-            logging.info("--- MIGRATION COMPLETE ---")
-            logging.warning("IMPORTANT: The migration was successful. Please manually delete the 'enriched_data.jsonl' file now.")
-            logging.info(f"Database now contains {db.get_count()} items.")
-            return
-        except Exception as e:
-            logging.fatal(f"FATAL: An error occurred during migration: {e}")
-            return
-
-    # --- REGULAR EXECUTION PATH ---
-    logging.info("Starting regular knowledge base build process...")
-    try:
         llm = GeminiClient()
         raw_df = pd.read_json(config.RAW_DATA_FILE, lines=True)
     except FileNotFoundError:
@@ -60,6 +27,8 @@ async def main():
         logging.fatal(f"Failed to initialize services: {e}")
         return
 
+    logging.info("Starting regular knowledge base build process...")
+    
     original_count = len(raw_df)
     logging.info(f"Loaded {original_count} total records from {config.RAW_DATA_FILE}.")
 
