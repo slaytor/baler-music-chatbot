@@ -8,7 +8,7 @@ __pycache__/
 
 # --- Poetry ---
 # For a solo project, it's fine to either commit or ignore the lock file.
-# poetry.lock
+poetry.lock
 
 # --- Scrapy ---
 # Ignore Scrapy's project state directory
