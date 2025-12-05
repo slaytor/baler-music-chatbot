@@ -4,9 +4,24 @@ import chromadb
 import pandas as pd
 import hashlib
 import logging
+import torch
 from sentence_transformers import SentenceTransformer
 
 from . import config
+
+# --- HELPER FUNCTION FOR DEVICE SELECTION ---
+def get_optimal_device():
+    """Automatically select the best device for SentenceTransformer."""
+    if torch.backends.mps.is_available():
+        logging.info("Apple MPS (GPU) is available. Using 'mps'.")
+        return 'mps'
+    # You could add a check for CUDA here if you ever use NVIDIA GPUs
+    # elif torch.cuda.is_available():
+    #     logging.info("NVIDIA CUDA (GPU) is available. Using 'cuda'.")
+    #     return 'cuda'
+    else:
+        logging.info("No specialized hardware found. Using 'cpu'.")
+        return 'cpu'
 
 class VectorDB:
     """Handles all interactions with the ChromaDB vector database."""
@@ -31,8 +46,9 @@ class VectorDB:
         self.collection = self.client.get_or_create_collection(
             name=config.COLLECTION_NAME
         )
-        # --- OPTIMIZATION: Use the GPU for embeddings ---
-        self.model = SentenceTransformer(config.EMBEDDING_MODEL_NAME, device='mps')
+        
+        device = get_optimal_device()
+        self.model = SentenceTransformer(config.EMBEDDING_MODEL_NAME, device=device)
         logging.info("ChromaDB connection successful.")
 
     def _wait_for_chroma(self, timeout: int = 60):

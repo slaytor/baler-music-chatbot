@@ -7,12 +7,12 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from .database import VectorDB
-from .llm import GeminiClient
+from .llm import get_llm_client # --- FIX: Import the factory function ---
 
 # --- INITIALIZATION ---
 try:
     db = VectorDB()
-    llm = GeminiClient()
+    llm = get_llm_client() # --- FIX: Use the factory to get the correct client ---
 except Exception as e:
     print(f"FATAL: Failed to initialize services: {e}")
     exit(1)

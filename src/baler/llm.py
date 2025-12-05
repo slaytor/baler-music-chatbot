@@ -8,30 +8,6 @@ import httpx
 from . import config
 from .auth_util import get_gcp_auth_token
 
-# --- UTILITY FUNCTION ---
-
-def extract_json_from_string(text: str) -> str:
-    """
-    Finds and extracts the first valid JSON object (list or dict) from a string.
-    """
-    start_bracket = text.find('[')
-    start_brace = text.find('{')
-
-    if start_bracket == -1 and start_brace == -1: return ""
-    
-    start_index = min(start_bracket, start_brace) if start_bracket != -1 and start_brace != -1 else max(start_bracket, start_brace)
-    
-    end_bracket = text.rfind(']')
-    end_brace = text.rfind('}')
-
-    if end_bracket == -1 and end_brace == -1: return ""
-
-    end_index = max(end_bracket, end_brace)
-
-    if start_index > end_index: return ""
-
-    return text[start_index : end_index + 1]
-
 # --- CLIENT FACTORY ---
 
 def get_llm_client():
@@ -52,6 +28,24 @@ class OllamaClient:
     def __init__(self):
         self.api_url = config.OLLAMA_API_URL
         self.model = config.OLLAMA_MODEL
+
+    def _clean_tags(self, tags: list[str]) -> list[str]:
+        """Post-processes the raw output from the LLM to remove conversational noise."""
+        cleaned_tags = []
+        bad_phrases = ["here are", "note that", "happy to help", "review excerpt", "keywords", "phrases"]
+        
+        for tag in tags:
+            tag_lower = tag.lower()
+            # Rule 1: Discard long, conversational tags
+            if len(tag) > 75:
+                continue
+            # Rule 2: Discard tags containing common conversational filler
+            if any(phrase in tag_lower for phrase in bad_phrases):
+                continue
+            
+            cleaned_tags.append(tag)
+            
+        return cleaned_tags
 
     async def generate_tags_for_chunk(
         self, client: httpx.AsyncClient, chunk: str
@@ -77,7 +71,10 @@ class OllamaClient:
             if not raw_output:
                 return []
 
-            return [tag.strip() for tag in raw_output.split(',') if tag.strip()]
+            raw_tags = [tag.strip() for tag in raw_output.split(',') if tag.strip()]
+            
+            # --- NEW: Post-process the tags to ensure quality ---
+            return self._clean_tags(raw_tags)
 
         except httpx.RequestError as e:
             print(f"\n--- OLLAMA CONNECTION ERROR ---\nCould not connect to Ollama at {self.api_url}\nPlease ensure the Ollama application is running.\nError details: {e!r}\n---------------------------------\n")
@@ -131,7 +128,6 @@ class GeminiClient:
         self.api_url_base = f"https://generativelanguage.googleapis.com/v1beta/models/{config.GEMINI_MODEL}"
         self.auth_token = None
         self.token_gen_time = 0
-        self._get_token()
 
     def _get_token(self):
         """Fetches or refreshes the GCP auth token."""
@@ -144,7 +140,7 @@ class GeminiClient:
 
     def _check_token(self):
         """Checks if the token is expired and refreshes it if needed."""
-        if time.time() - self.token_gen_time > config.TOKEN_LIFESPAN_SECONDS:
+        if not self.auth_token or time.time() - self.token_gen_time > config.TOKEN_LIFESPAN_SECONDS:
             self._get_token()
 
     def _get_headers(self) -> dict:

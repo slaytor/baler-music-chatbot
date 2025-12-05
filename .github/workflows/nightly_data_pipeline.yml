@@ -1,10 +1,11 @@
-name: Scrape Pitchfork Reviews Daily
+name: Nightly Data Pipeline
 
 on:
   schedule:
-    # Runs at 00:00 UTC every day
-    - cron: '0 0 * * *'
-  workflow_dispatch: # Allows manual triggering
+    # Runs every day at midnight UTC
+    - cron: "0 0 * * *"
+  workflow_dispatch:
+    # Allows manual triggering of the workflow
 
 env:
   AWS_REGION: us-east-1
@@ -14,22 +15,19 @@ env:
   PREVIOUS_DAY_FILENAME: reviews_previous.jsonl
 
 jobs:
-  scrape:
+  scrape-and-build:
     runs-on: ubuntu-latest
     steps:
-      - name: Check out repository
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: "3.12"
 
       - name: Install Poetry
         uses: snok/install-poetry@v1
-        with:
-          virtualenvs-create: true
-          virtualenvs-in-project: true
 
       - name: Install dependencies
         run: poetry install --no-interaction --no-root
@@ -48,23 +46,18 @@ jobs:
         id: download_previous
         run: |
           LATEST_FILE=$(aws s3api list-objects-v2 --bucket ${{ env.S3_BUCKET_NAME }} --prefix ${{ env.S3_DAILY_PREFIX }}/ --query 'sort_by(Contents, &LastModified)[-1].Key' --output text)
-          
           if [ "$LATEST_FILE" = "null" ] || [ -z "$LATEST_FILE" ]; then
             echo "No previous scrape file found in S3. Performing full scrape."
-            # --- IMPORTANT: If continue-on-error is false, this branch might require manual intervention on first run ---
-            echo "previous_file_path=" >> $GITHUB_OUTPUT 
-            # Optionally signal failure if no previous file is expected after the first run
-            # echo "::error::Expected a previous file but found none." && exit 1 
+            echo "previous_file_path=" >> $GITHUB_OUTPUT
           else
             echo "Latest file found: $LATEST_FILE"
             aws s3 cp s3://${{ env.S3_BUCKET_NAME }}/${LATEST_FILE} ${{ env.PREVIOUS_DAY_FILENAME }}
             echo "previous_file_path=${{ env.PREVIOUS_DAY_FILENAME }}" >> $GITHUB_OUTPUT
             echo "Downloaded previous day's data."
           fi
-        # --- THE CHANGE: Removed continue-on-error: true ---
-        # Now, any failure in this step will stop the workflow.
 
       - name: Run Scrapy Spider
+        id: scrape
         run: |
           cd src
           PREVIOUS_ARG=""
@@ -73,7 +66,8 @@ jobs:
           fi
           poetry run scrapy crawl pitchfork_reviews ${PREVIOUS_ARG} -o ../${{ env.LOCAL_OUTPUT_FILENAME }}
 
-      - name: Upload today's reviews to S3 with date stamp
+      - name: Upload today's reviews to S3
+        if: steps.scrape.outcome == 'success'
         run: |
           if [ -s "${{ env.LOCAL_OUTPUT_FILENAME }}" ]; then
             TODAY=$(date +'%Y-%m-%d')
@@ -81,7 +75,26 @@ jobs:
             echo "Uploading to ${S3_TARGET_PATH}"
             aws s3 cp ${{ env.LOCAL_OUTPUT_FILENAME }} ${S3_TARGET_PATH}
           else
-            echo "Scraper output file is empty or does not exist. Skipping S3 upload."
-            # Decide if an empty scrape should fail the job
-            # exit 1 
+            echo "Scraper output file is empty or does not exist. Skipping upload."
           fi
+      
+      - name: Configure GCP Credentials
+        if: steps.scrape.outcome == 'success'
+        run: |
+          echo "${{ secrets.GCP_CREDENTIALS }}" > ${{ github.workspace }}/gcloud-credentials.json
+          echo "GOOGLE_APPLICATION_CREDENTIALS=${{ github.workspace }}/gcloud-credentials.json" >> $GITHUB_ENV
+
+      - name: Build Knowledge Base from Today's Scrape
+        if: steps.scrape.outcome == 'success'
+        env:
+          LLM_PROVIDER: GEMINI
+          DB_PROVIDER: CLOUD
+          CHROMA_CLOUD_API_KEY: ${{ secrets.CHROMA_CLOUD_API_KEY }}
+          CHROMA_CLOUD_TENANT: ${{ secrets.CHROMA_CLOUD_TENANT }}
+          CHROMA_CLOUD_DATABASE: ${{ secrets.CHROMA_CLOUD_DATABASE }}
+        run: |
+          if [ ! -s "${{ env.LOCAL_OUTPUT_FILENAME }}" ]; then
+            echo "No new reviews were scraped. Skipping knowledge base build."
+            exit 0
+          fi
+          poetry run python -m src.baler.create_knowledge_base --input-file ${{ env.LOCAL_OUTPUT_FILENAME }}

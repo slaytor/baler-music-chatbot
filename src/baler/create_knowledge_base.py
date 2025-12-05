@@ -2,6 +2,7 @@ import asyncio
 import logging
 import httpx
 import pandas as pd
+import argparse
 from tqdm import tqdm
 
 from . import config
@@ -11,7 +12,6 @@ from .utils import chunk_text
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
-# --- OPTIMIZATION: Helper function for concurrent processing with a semaphore ---
 async def process_chunk_with_semaphore(semaphore, llm, client, chunk, row_data):
     async with semaphore:
         tags = await llm.generate_tags_for_chunk(client, chunk)
@@ -25,15 +25,25 @@ async def process_chunk_with_semaphore(semaphore, llm, client, chunk, row_data):
 
 async def main():
     """Main function to orchestrate the knowledge base build."""
+    parser = argparse.ArgumentParser(description="Build the knowledge base from a JSONL file.")
+    parser.add_argument(
+        "--input-file",
+        type=str,
+        default=config.RAW_DATA_FILE,
+        help="Path to the input JSONL file of reviews."
+    )
+    args = parser.parse_args()
+
     logging.getLogger("chromadb").setLevel(logging.WARNING)
     logging.getLogger("httpx").setLevel(logging.WARNING)
 
     try:
         db = VectorDB()
         llm = get_llm_client()
-        raw_df = pd.read_json(config.RAW_DATA_FILE, lines=True)
+        logging.info(f"Loading reviews from {args.input_file}...")
+        raw_df = pd.read_json(args.input_file, lines=True)
     except FileNotFoundError:
-        logging.fatal(f"FATAL: Raw data file not found at '{config.RAW_DATA_FILE}'.")
+        logging.fatal(f"FATAL: Raw data file not found at '{args.input_file}'.")
         return
     except Exception as e:
         logging.fatal(f"Failed to initialize services: {e}")
@@ -42,7 +52,7 @@ async def main():
     logging.info(f"Starting knowledge base build process using {config.LLM_PROVIDER}...")
     
     original_count = len(raw_df)
-    logging.info(f"Loaded {original_count} total records from {config.RAW_DATA_FILE}.")
+    logging.info(f"Loaded {original_count} total records.")
 
     raw_df.drop_duplicates(subset=["review_url"], keep="last", inplace=True)
     df = raw_df[raw_df["artist"] != "N/A"].copy()
@@ -53,11 +63,10 @@ async def main():
 
     unprocessed_df = df[~df["review_url"].isin(processed_urls)]
     if unprocessed_df.empty:
-        logging.info("All reviews have already been processed. Nothing to do.")
+        logging.info("All reviews in the input file have already been processed. Nothing to do.")
         return
     logging.info(f"Found {len(unprocessed_df)} new reviews to process.")
 
-    # --- OPTIMIZATION: Set concurrency limit ---
     CONCURRENCY_LIMIT = 5
     semaphore = asyncio.Semaphore(CONCURRENCY_LIMIT)
 
