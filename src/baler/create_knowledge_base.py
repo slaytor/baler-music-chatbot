@@ -6,10 +6,22 @@ from tqdm import tqdm
 
 from . import config
 from .database import VectorDB
-from .llm import GeminiClient
+from .llm import get_llm_client
 from .utils import chunk_text
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+
+# --- OPTIMIZATION: Helper function for concurrent processing with a semaphore ---
+async def process_chunk_with_semaphore(semaphore, llm, client, chunk, row_data):
+    async with semaphore:
+        tags = await llm.generate_tags_for_chunk(client, chunk)
+        if tags:
+            return {
+                "artist": row_data["artist"], "album_title": row_data["album_title"],
+                "score": row_data["score"], "review_url": row_data["review_url"],
+                "text_chunk": chunk, "tags": tags
+            }
+        return None
 
 async def main():
     """Main function to orchestrate the knowledge base build."""
@@ -18,7 +30,7 @@ async def main():
 
     try:
         db = VectorDB()
-        llm = GeminiClient()
+        llm = get_llm_client()
         raw_df = pd.read_json(config.RAW_DATA_FILE, lines=True)
     except FileNotFoundError:
         logging.fatal(f"FATAL: Raw data file not found at '{config.RAW_DATA_FILE}'.")
@@ -27,7 +39,7 @@ async def main():
         logging.fatal(f"Failed to initialize services: {e}")
         return
 
-    logging.info("Starting regular knowledge base build process...")
+    logging.info(f"Starting knowledge base build process using {config.LLM_PROVIDER}...")
     
     original_count = len(raw_df)
     logging.info(f"Loaded {original_count} total records from {config.RAW_DATA_FILE}.")
@@ -45,22 +57,25 @@ async def main():
         return
     logging.info(f"Found {len(unprocessed_df)} new reviews to process.")
 
+    # --- OPTIMIZATION: Set concurrency limit ---
+    CONCURRENCY_LIMIT = 5
+    semaphore = asyncio.Semaphore(CONCURRENCY_LIMIT)
+
     with tqdm(total=len(unprocessed_df), desc="Processing reviews") as pbar:
         for i in range(0, len(unprocessed_df), config.KB_BATCH_SIZE):
             batch_df = unprocessed_df.iloc[i : i + config.KB_BATCH_SIZE]
-            enriched_chunks = []
+            
             async with httpx.AsyncClient() as client:
+                tasks = []
                 for _, row in batch_df.iterrows():
                     text_chunks = chunk_text(row["review_text"])
-                    tasks = [llm.generate_tags_for_chunk(client, chunk) for chunk in text_chunks]
-                    tags_results = await asyncio.gather(*tasks)
-                    for chunk, tags in zip(text_chunks, tags_results):
-                        if tags:
-                            enriched_chunks.append({
-                                "artist": row["artist"], "album_title": row["album_title"],
-                                "score": row["score"], "review_url": row["review_url"],
-                                "text_chunk": chunk, "tags": tags
-                            })
+                    row_data = row.to_dict()
+                    for chunk in text_chunks:
+                        tasks.append(process_chunk_with_semaphore(semaphore, llm, client, chunk, row_data))
+                
+                results = await asyncio.gather(*tasks)
+                enriched_chunks = [res for res in results if res is not None]
+
             if enriched_chunks:
                 enriched_batch_df = pd.DataFrame(enriched_chunks)
                 db.add_batch(enriched_batch_df)

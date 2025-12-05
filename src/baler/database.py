@@ -2,27 +2,38 @@ import json
 import time
 import chromadb
 import pandas as pd
+import hashlib
+import logging
 from sentence_transformers import SentenceTransformer
 
 from . import config
-
 
 class VectorDB:
     """Handles all interactions with the ChromaDB vector database."""
 
     def __init__(self):
-        print(
-            f"Initializing ChromaDB client... Connecting to {config.CHROMA_HOST}:{config.CHROMA_PORT}"
-        )
-        self.client = chromadb.HttpClient(
-            host=config.CHROMA_HOST, port=config.CHROMA_PORT
-        )
+        if config.DB_PROVIDER.upper() == "CLOUD":
+            logging.info("Initializing ChromaDB client... Connecting to Chroma Cloud.")
+            if not all([config.CHROMA_CLOUD_API_KEY, config.CHROMA_CLOUD_TENANT, config.CHROMA_CLOUD_DATABASE]):
+                raise ValueError("CHROMA_CLOUD_API_KEY, CHROMA_CLOUD_TENANT, and CHROMA_CLOUD_DATABASE must be set for CLOUD provider.")
+            self.client = chromadb.CloudClient(
+                api_key=config.CHROMA_CLOUD_API_KEY,
+                tenant=config.CHROMA_CLOUD_TENANT,
+                database=config.CHROMA_CLOUD_DATABASE
+            )
+        else: # Default to LOCAL
+            logging.info(f"Initializing ChromaDB client... Connecting to local Docker at {config.CHROMA_HOST}:{config.CHROMA_PORT}")
+            self.client = chromadb.HttpClient(
+                host=config.CHROMA_HOST, port=config.CHROMA_PORT
+            )
+        
         self._wait_for_chroma()
         self.collection = self.client.get_or_create_collection(
             name=config.COLLECTION_NAME
         )
-        self.model = SentenceTransformer(config.EMBEDDING_MODEL_NAME)
-        print("ChromaDB connection successful.")
+        # --- OPTIMIZATION: Use the GPU for embeddings ---
+        self.model = SentenceTransformer(config.EMBEDDING_MODEL_NAME, device='mps')
+        logging.info("ChromaDB connection successful.")
 
     def _wait_for_chroma(self, timeout: int = 60):
         """Waits for the ChromaDB server to be available."""
@@ -30,10 +41,10 @@ class VectorDB:
         while time.time() - start_time < timeout:
             try:
                 self.client.heartbeat()
-                print("ChromaDB server is up.")
+                logging.info("ChromaDB server is up.")
                 return
             except Exception:
-                print("Waiting for ChromaDB server...")
+                logging.info("Waiting for ChromaDB server...")
                 time.sleep(5)
         raise TimeoutError("ChromaDB server did not start in time.")
 
@@ -44,21 +55,30 @@ class VectorDB:
     def get_processed_urls(self) -> set:
         """Returns a set of all review_urls already in the database."""
         try:
-            batch_size = 1000
             count = self.get_count()
+            logging.info(f"Collection '{self.collection.name}' reports {count} records.")
+            if count == 0:
+                return set()
+
             all_urls = set()
+            batch_size = 250
             for offset in range(0, count, batch_size):
+                logging.info(f"Fetching records from offset {offset}...")
                 items = self.collection.get(
-                    limit=batch_size, offset=offset, include=["metadatas"]
+                    limit=batch_size,
+                    offset=offset,
+                    include=["metadatas"]
                 )
-                if items["metadatas"]:
+                if items and items["metadatas"]:
                     for meta in items["metadatas"]:
                         if "review_url" in meta:
                             all_urls.add(meta["review_url"])
+            
+            logging.info(f"Total unique URLs found in database: {len(all_urls)}")
             return all_urls
         except Exception as e:
-            print(f"Error getting processed URLs (DB might be empty): {e}")
-        return set()
+            logging.error(f"Error getting processed URLs: {e}", exc_info=True)
+            return set()
 
     def search(self, query_text: str, top_k: int) -> list:
         """
@@ -74,7 +94,7 @@ class VectorDB:
 
     def add_batch(self, enriched_df: pd.DataFrame):
         """
-        Embeds and adds a batch of new documents to the database.
+        Embeds and adds a batch of new documents to the database using a robust method.
         """
         if enriched_df.empty:
             return 0
@@ -84,13 +104,17 @@ class VectorDB:
             axis=1,
         )
 
-        print(f"Embedding {len(enriched_df)} new search documents...")
+        logging.info(f"Embedding {len(enriched_df)} new search documents...")
         embeddings = self.model.encode(
             enriched_df["search_document"].tolist(), show_progress_bar=True
         )
 
-        current_count = self.get_count()
-        ids = [f"chunk_{current_count + i}" for i in range(len(enriched_df))]
+        ids = [
+            hashlib.sha256(
+                f"{row.get('review_url', '')}{row.get('text_chunk', '')}".encode()
+            ).hexdigest()
+            for _, row in enriched_df.iterrows()
+        ]
 
         metadatas = []
         for _, row in enriched_df.iterrows():
@@ -98,23 +122,22 @@ class VectorDB:
             meta.pop("search_document", None)
             meta["tags"] = json.dumps(meta.get("tags", []))
             
-            # --- SANITIZATION STEP ---
-            # Ensure all metadata values are valid types for ChromaDB.
             for key, value in meta.items():
                 if value is None:
-                    meta[key] = "N/A" # Replace None with a default string
+                    meta[key] = "N/A"
             
             metadatas.append(meta)
 
-        batch_size = 500
+        batch_size = 100
         for i in range(0, len(enriched_df), batch_size):
             try:
-                self.collection.add(
+                self.collection.upsert(
                     ids=ids[i : i + batch_size],
                     embeddings=embeddings[i : i + batch_size].tolist(),
                     metadatas=metadatas[i : i + batch_size],
+                    documents=enriched_df["search_document"].tolist()[i : i + batch_size]
                 )
             except Exception as e:
-                print(f"Error adding batch {i} to ChromaDB: {e}")
+                logging.error(f"Error upserting batch {i} to ChromaDB: {e}")
 
         return len(enriched_df)

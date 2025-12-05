@@ -44,4 +44,7 @@ Thumbs.db
 # Ignore notebook checkpoints
 .ipynb_checkpoints
 
+# --- Logs ---
+*.log
+
 chroma_db/

@@ -7,12 +7,13 @@ services:
     ports:
       - "8080:8080"
     environment:
-      - CHROMA_HOST=chroma
-      - CHROMA_PORT=8000
-      - GOOGLE_APPLICATION_CREDENTIALS=/app/gcloud-credentials.json
       - PYTHONPATH=/app/src
-    depends_on:
-      - chroma
+      - DB_PROVIDER=CLOUD # Assuming prod app uses cloud DB
+      - CHROMA_CLOUD_API_KEY=${CHROMA_CLOUD_API_KEY}
+      - CHROMA_CLOUD_TENANT=${CHROMA_CLOUD_TENANT}
+      - CHROMA_CLOUD_DATABASE=${CHROMA_CLOUD_DATABASE}
+      - LLM_PROVIDER=OLLAMA
+      - OLLAMA_API_URL=http://host.docker.internal:11434/api/generate
     volumes:
       - ./reviews.jsonl:/app/reviews.jsonl
       - ./.processed_s3_files.log:/app/.processed_s3_files.log
@@ -25,26 +26,23 @@ services:
       dockerfile: Dockerfile
     command: tail -f /dev/null
     environment:
-      - CHROMA_HOST=chroma
-      - CHROMA_PORT=8000
-      - GOOGLE_APPLICATION_CREDENTIALS=/app/gcloud-credentials.json
       - PYTHONPATH=/app/src
-    depends_on:
-      - chroma
+      - DB_PROVIDER=CLOUD
+      - CHROMA_CLOUD_API_KEY=${CHROMA_CLOUD_API_KEY}
+      - CHROMA_CLOUD_TENANT=${CHROMA_CLOUD_TENANT}
+      - CHROMA_CLOUD_DATABASE=${CHROMA_CLOUD_DATABASE}
+      - LLM_PROVIDER=OLLAMA
+      - OLLAMA_API_URL=http://host.docker.internal:11434/api/generate
     volumes:
       - ./reviews.jsonl:/app/reviews.jsonl
       - ./.processed_s3_files.log:/app/.processed_s3_files.log
       - ./gcloud-credentials.json:/app/gcloud-credentials.json:ro
-      # Mount the local AWS credentials directory into the container.
-      # The '~' is a shortcut for your home directory.
-      # The ':ro' flag makes it read-only for extra security.
       - ~/.aws:/home/appuser/.aws:ro
 
-  # ChromaDB Vector Database Service
+  # ChromaDB Vector Database Service (for local dev only)
   chroma:
-    image: chromadb/chroma:0.5.0
+    image: chromadb/chroma:latest
+    ports:
+      - "8000:8000"
     volumes:
-      - chroma_data:/chroma/.chroma/index
-
-volumes:
-  chroma_data:
+      - ./chroma_db:/chroma/.chroma/index
