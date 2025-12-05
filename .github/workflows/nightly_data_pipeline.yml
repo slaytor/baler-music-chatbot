@@ -21,10 +21,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Set up Python with dependency caching
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: 'poetry' # This is the magic line that enables caching
 
       - name: Install Poetry
         uses: snok/install-poetry@v1
