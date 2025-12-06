@@ -14,7 +14,7 @@ DB_PROVIDER = os.getenv("DB_PROVIDER", "CLOUD")
 
 # --- API CONFIGURATION ---
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "OLLAMA")
-GEMINI_MODEL = "gemini-2.5-flash-latest" # Use the stable 'latest' tag for version 2.5
+GEMINI_MODEL = "gemini-2.0-flash-latest" # Set to user-specified version
 OLLAMA_MODEL = "llama3"
 OLLAMA_API_URL = os.getenv("OLLAMA_API_URL", "http://localhost:11434/api/generate")
 
