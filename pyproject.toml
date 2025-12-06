@@ -5,7 +5,6 @@ description = "A music recommendation chatbot powered by Pitchfork reviews"
 authors = ["Sam Taylor <sam.bernick.taylor@gmail.com>"]
 license = "MIT"
 readme = "README.md"
-requires-python = "~3.12"
 
 [tool.poetry.dependencies]
 python = "~3.12"
@@ -24,7 +23,7 @@ fastapi = ">=0.111.0,<0.112.0"
 uvicorn = {extras = ["standard"], version = ">=0.29.0,<0.30.0"}
 openai = ">=1.23.0,<2.0.0"
 google-generativeai = ">=0.5.0,<0.6.0"
-torch = ">=2.3.0" # Explicitly add torch for clarity
+torch = ">=2.3.0"
 
 [tool.poetry.group.dev.dependencies]
 black = ">=24.0.0"
