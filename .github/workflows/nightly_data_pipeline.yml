@@ -13,7 +13,7 @@ env:
   S3_DAILY_PREFIX: daily_scrapes
   LOCAL_OUTPUT_FILENAME: reviews_today.jsonl
   PREVIOUS_DAY_FILENAME: reviews_previous.jsonl
-  POETRY_VERSION: "1.8.2" # Pin poetry version for consistency
+  POETRY_VERSION: "1.8.2"
 
 jobs:
   scrape-and-build:
@@ -31,17 +31,6 @@ jobs:
         uses: snok/install-poetry@v1
         with:
           version: ${{ env.POETRY_VERSION }}
-          virtualenvs-create: true
-          virtualenvs-in-project: true
-      
-      - name: Load cached venv
-        id: cached-poetry-dependencies
-        uses: actions/cache@v4
-        with:
-          path: .venv
-          key: ${{ runner.os }}-poetry-${{ hashFiles('**/poetry.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-poetry-
 
       - name: Install dependencies
         run: poetry install --no-interaction --no-root
