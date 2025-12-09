@@ -3,6 +3,7 @@ import logging
 import httpx
 import pandas as pd
 import argparse
+import json
 from tqdm import tqdm
 
 from . import config
@@ -19,9 +20,21 @@ async def process_chunk_with_semaphore(semaphore, llm, client, chunk, row_data):
             return {
                 "artist": row_data["artist"], "album_title": row_data["album_title"],
                 "score": row_data["score"], "review_url": row_data["review_url"],
-                "text_chunk": chunk, "tags": tags
+                "text_chunk": chunk, "tags": tags,
+                "album_cover_url": row_data.get("album_cover_url", "N/A")
             }
         return None
+
+def load_reviews_robustly(file_path):
+    """Reads a JSONL file line by line, skipping any malformed lines."""
+    records = []
+    with open(file_path, 'r') as f:
+        for i, line in enumerate(f):
+            try:
+                records.append(json.loads(line))
+            except json.JSONDecodeError:
+                logging.warning(f"Skipping malformed JSON on line {i+1} in {file_path}")
+    return pd.DataFrame(records)
 
 async def main():
     """Main function to orchestrate the knowledge base build."""
@@ -41,7 +54,7 @@ async def main():
         db = VectorDB()
         llm = get_llm_client()
         logging.info(f"Loading reviews from {args.input_file}...")
-        raw_df = pd.read_json(args.input_file, lines=True)
+        raw_df = load_reviews_robustly(args.input_file)
     except FileNotFoundError:
         logging.fatal(f"FATAL: Raw data file not found at '{args.input_file}'.")
         return

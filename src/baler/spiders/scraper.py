@@ -1,11 +1,9 @@
 import scrapy
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 import json
-import re # Import regular expressions
+import re
 
-
-# Remember your IDE's formatting preference for blank lines
 @dataclass
 class ReviewItem:
     artist: str
@@ -16,7 +14,7 @@ class ReviewItem:
     review_text: str
     author: str
     release_year: str
-
+    album_cover_url: str = field(default="N/A")
 
 class PitchforkSpider(scrapy.Spider):
     name = "pitchfork_reviews"
@@ -30,7 +28,7 @@ class PitchforkSpider(scrapy.Spider):
 
         self.start_urls = [f'https://pitchfork.com/reviews/albums/?page={self.start_page}']
         self.seen_urls = set()
-        self.stop_scraping = False # Flag to stop pagination
+        self.stop_scraping = False
 
         if previous_file and Path(previous_file).exists():
             self.logger.info(f"Loading previously seen URLs from {previous_file}")
@@ -62,7 +60,7 @@ class PitchforkSpider(scrapy.Spider):
     async def parse(self, response):
         page = response.meta["playwright_page"]
         self.pages_crawled += 1
-        found_seen_url_on_page = False # Track if we saw an old review on *this specific page*
+        found_seen_url_on_page = False
 
         review_links = response.css('a[href^="/reviews/albums/"]')
 
@@ -72,13 +70,11 @@ class PitchforkSpider(scrapy.Spider):
             if self.seen_urls and review_url in self.seen_urls:
                 found_seen_url_on_page = True
                 self.logger.debug(f"Encountered previously seen review: {review_url}. Skipping.")
-                continue # Skip to the next link
+                continue
 
-            # This line is now only reached for new reviews
             self.logger.info(f"Found new review: {review_url}")
             yield response.follow(link, self.parse_review)
 
-        # Decide pagination *after* processing all links
         should_stop_pagination = found_seen_url_on_page
 
         if self.max_pages_to_crawl is not None and self.pages_crawled >= self.max_pages_to_crawl:
@@ -109,18 +105,18 @@ class PitchforkSpider(scrapy.Spider):
         await page.close()
 
     def parse_review(self, response):
-        # Fallback logic for artist name
         artist_name = response.css('div[class*="SplitScreenContentHeaderArtist"] a::text').get()
         if not artist_name:
             artist_name = response.css('div[class*="SplitScreenContentHeaderArtist"]::text').get()
 
         album_title = response.xpath('string(//h1[@data-testid="ContentHeaderHed"])').get()
         score_str = response.css('p[class*="Rating-"]::text').get()
-
         best_new_music_tag = response.css('p[class*="BestNewMusicText-"]').get()
         is_bnm = best_new_music_tag is not None
-
         author = response.css('a[href*="/staff/"]::text').get()
+        
+        # --- FINAL, CORRECT SELECTOR ---
+        album_cover_url = response.css('img[loading="eager"]::attr(src)').get()
 
         release_year = response.css('time::text').get()
         if not release_year:
@@ -132,7 +128,6 @@ class PitchforkSpider(scrapy.Spider):
 
         paragraphs = response.css('div[class*="body__inner-container"] p::text').getall()
         review_text = "\n".join(paragraphs)
-
         score = float(score_str) if score_str else 0.0
 
         yield ReviewItem(
@@ -143,5 +138,6 @@ class PitchforkSpider(scrapy.Spider):
             review_url=response.url,
             review_text=review_text.strip(),
             author=author.strip() if author else "N/A",
-            release_year=release_year if release_year else "N/A"
+            release_year=release_year if release_year else "N/A",
+            album_cover_url=album_cover_url if album_cover_url else "N/A"
         )
