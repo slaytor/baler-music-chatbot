@@ -7,12 +7,12 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from .database import VectorDB
-from .llm import get_llm_client # --- FIX: Import the factory function ---
+from .llm import get_llm_client
 
 # --- INITIALIZATION ---
 try:
     db = VectorDB()
-    llm = get_llm_client() # --- FIX: Use the factory to get the correct client ---
+    llm = get_llm_client()
 except Exception as e:
     print(f"FATAL: Failed to initialize services: {e}")
     exit(1)
@@ -38,7 +38,7 @@ static_dir = Path(__file__).parent.parent.parent / "static"
 
 class Query(BaseModel):
     text: str = Field(..., max_length=1000)
-    top_k: int = 5
+    top_k: int = 2 # --- CHANGE: Reduced from 5 to 2 for more focused recommendations ---
 
 @app.post("/recommend")
 async def get_recommendation_stream(query: Query):
@@ -49,7 +49,6 @@ async def get_recommendation_stream(query: Query):
     context = db.search(query.text, query.top_k)
     if not context:
         async def empty_stream():
-            # Send the response in two parts to mimic the real stream
             yield json.dumps({"chunk": "Apologies, but my knowledge base is currently empty. Please run the data ingestion script to populate the database."}) + "\n"
             yield json.dumps({"sources": []}) + "\n"
         return StreamingResponse(empty_stream(), media_type="application/x-ndjson")

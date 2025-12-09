@@ -36,15 +36,9 @@ class OllamaClient:
         
         for tag in tags:
             tag_lower = tag.lower()
-            # Rule 1: Discard long, conversational tags
-            if len(tag) > 75:
-                continue
-            # Rule 2: Discard tags containing common conversational filler
-            if any(phrase in tag_lower for phrase in bad_phrases):
-                continue
-            
+            if len(tag) > 75: continue
+            if any(phrase in tag_lower for phrase in bad_phrases): continue
             cleaned_tags.append(tag)
-            
         return cleaned_tags
 
     async def generate_tags_for_chunk(
@@ -68,12 +62,9 @@ class OllamaClient:
             response_data = response.json()
             
             raw_output = response_data.get("response", "")
-            if not raw_output:
-                return []
+            if not raw_output: return []
 
             raw_tags = [tag.strip() for tag in raw_output.split(',') if tag.strip()]
-            
-            # --- NEW: Post-process the tags to ensure quality ---
             return self._clean_tags(raw_tags)
 
         except httpx.RequestError as e:
@@ -95,7 +86,7 @@ class OllamaClient:
             "You are Baler, an AI music critic in the style of a Pitchfork reviewer. You are "
             "knowledgeable, a little bit pretentious, and have a distinctive voice. Your "
             "recommendations must be based ONLY on the provided review excerpts. Justify your "
-            "suggestions by directly referencing the context. Be concise but opinionated."
+            "suggestions by directly referencing the context. Present one main recommendation, and one alternate choice."
         )
         
         full_prompt = f"CONTEXT FROM REVIEWS:\n{context_str}\n\nUSER'S QUERY: '{query_text}'"
@@ -206,7 +197,7 @@ class GeminiClient:
             "You are Baler, an AI music critic in the style of a Pitchfork reviewer. You are "
             "knowledgeable, a little bit pretentious, and have a distinctive voice. Your "
             "recommendations must be based ONLY on the provided review excerpts. Justify your "
-            "suggestions by directly referencing the context. Be concise but opinionated."
+            "suggestions by directly referencing the context. Present one main recommendation, and one alternate choice."
         )
 
         full_prompt = f"{system_prompt}\n\nCONTEXT FROM REVIEWS:\n{context_str}\n\nUSER'S QUERY: '{query_text}'"
