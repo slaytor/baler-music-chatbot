@@ -15,10 +15,6 @@ def get_optimal_device():
     if torch.backends.mps.is_available():
         logging.info("Apple MPS (GPU) is available. Using 'mps'.")
         return 'mps'
-    # You could add a check for CUDA here if you ever use NVIDIA GPUs
-    # elif torch.cuda.is_available():
-    #     logging.info("NVIDIA CUDA (GPU) is available. Using 'cuda'.")
-    #     return 'cuda'
     else:
         logging.info("No specialized hardware found. Using 'cpu'.")
         return 'cpu'
@@ -96,17 +92,35 @@ class VectorDB:
             logging.error(f"Error getting processed URLs: {e}", exc_info=True)
             return set()
 
-    def search(self, query_text: str, top_k: int) -> list:
+    def search(self, query_text: str, top_k: int, offset: int = 0) -> list:
         """
-        Embeds a query and searches the database, returning the top_k results.
+        Embeds a query and searches the database, returning the top_k results
+        with an optional offset.
+        
+        Since ChromaDB's query() method does not support an 'offset' parameter,
+        we fetch (offset + top_k) results and slice the list manually.
         """
         query_embedding = self.model.encode([query_text]).tolist()
+        
+        # Fetch enough results to cover the offset
+        fetch_count = offset + top_k
+        
         results = self.collection.query(
-            query_embeddings=query_embedding, n_results=top_k
+            query_embeddings=query_embedding,
+            n_results=fetch_count
         )
+        
         if not results or not results.get("metadatas") or not results["metadatas"][0]:
             return []
-        return [metadata for metadata in results["metadatas"][0]]
+            
+        all_metadatas = results["metadatas"][0]
+        
+        # If we don't have enough results to reach the offset, return empty
+        if len(all_metadatas) <= offset:
+            return []
+            
+        # Slice the results to return only the requested page
+        return all_metadatas[offset : offset + top_k]
 
     def add_batch(self, enriched_df: pd.DataFrame):
         """

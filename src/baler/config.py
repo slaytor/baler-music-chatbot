@@ -13,10 +13,19 @@ load_dotenv(ENV_PATH)
 DB_PROVIDER = os.getenv("DB_PROVIDER", "CLOUD")
 
 # --- API CONFIGURATION ---
+# LLM_PROVIDER is used for the Knowledge Base creation (Ingestion)
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "OLLAMA")
-GEMINI_MODEL = "gemini-2.0-flash" # Set to specific version
-OLLAMA_MODEL = "mistral" # Switched to Mistral for better instruction following
+
+# APP_LLM_PROVIDER is used for the live Web Application (Inference)
+APP_LLM_PROVIDER = os.getenv("APP_LLM_PROVIDER", "GEMINI")
+
+GEMINI_MODEL = "gemini-2.0-flash"
+OLLAMA_MODEL = "mistral"
 OLLAMA_API_URL = os.getenv("OLLAMA_API_URL", "http://localhost:11434/api/generate")
+
+# --- MUSIC SERVICE CONFIGURATION ---
+SPOTIFY_CLIENT_ID = os.getenv("SPOTIFY_CLIENT_ID")
+SPOTIFY_CLIENT_SECRET = os.getenv("SPOTIFY_CLIENT_SECRET")
 
 # --- AUTHENTICATION ---
 CREDENTIALS_FILE_NAME = "gcloud-credentials.json"

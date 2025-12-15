@@ -3,130 +3,161 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Baler | Music Recommendations</title>
+    <title>Get 'Forked | Music Recommendations</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
-    <!-- Include Marked.js for Markdown rendering -->
+    <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <style>
         body {
-            font-family: 'Inter', sans-serif;
-            /* Subtle radial gradient background */
-            background-color: #0f172a; /* Slate 900 base */
-            background-image: radial-gradient(circle at top left, rgba(30, 41, 59, 0.8), transparent 50%),
-                              radial-gradient(circle at bottom right, rgba(51, 65, 85, 0.6), transparent 50%);
+            font-family: 'Nunito', sans-serif;
+            background-color: #0a0a0a; 
         }
-        /* Style the header font */
-        .header-title {
-            font-family: 'Playfair Display', serif;
-        }
+        .header-title { font-family: 'Playfair Display', serif; }
         .prose { max-width: none; }
         .prose p { margin-bottom: 0.75em; line-height: 1.6; }
-        .prose strong { color: #f3f4f6; } /* Lighter gray */
+        .prose strong { color: #f3f4f6; }
         .prose code { background-color: #4b5563; padding: 0.2em 0.4em; border-radius: 4px; font-size: 0.85em; color: #e5e7eb;}
         .prose pre { background-color: #1f2937; padding: 1em; border-radius: 6px; overflow-x: auto; border: 1px solid #374151;}
+        
+        /* Custom scrollbar for the page/chat */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #475569; }
+        
+        textarea:focus { box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.5); }
+        
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
+        .animate-pulse-slow { animation: pulse 1.8s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+        .transition-all { transition: all 0.5s ease-in-out; }
+        
+        .input-icon { position: absolute; left: 1.25rem; top: 1.1rem; color: #9ca3af; pointer-events: none; }
+        
+        .btn-gradient { background-image: linear-gradient(to right, #4f46e5, #7c3aed); }
+        .btn-gradient:hover { background-image: linear-gradient(to right, #6366f1, #8b5cf6); }
+        
+        .source-card {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+            background-color: rgba(30, 41, 59, 0.7);
+            padding: 0.75rem;
+            border-radius: 0.375rem;
+            border: 1px solid #475569;
+            transition: all 0.2s ease-in-out;
+        }
+        .source-card:hover {
+            border-color: #6366f1;
+            transform: translateY(-2px);
+        }
+        .score-circle {
+            width: 40px;
+            height: 40px;
+            border-radius: 9999px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 0.875rem;
+            color: #e2e8f0;
+            border: 2px solid;
+        }
+        .score-good { border-color: #ef4444; }
+        .score-great { border-color: #f97316; }
+        .score-bnm { border-color: #ef4444; background-color: #ef4444; color: #fff; }
+        .play-preview-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+        .play-preview-btn:disabled:hover { background-color: transparent; }
 
-        #chat-history::-webkit-scrollbar { width: 6px; }
-        #chat-history::-webkit-scrollbar-track { background: transparent; }
-        #chat-history::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 3px; }
-        #chat-history::-webkit-scrollbar-thumb:hover { background: #6b7280; }
-
-        input:focus {
-             box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.5); /* Indigo glow */
+        /* --- Layout Classes --- */
+        .layout-initial {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        .layout-chat {
+            display: block;
+            padding-top: 2rem;
         }
 
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.6; }
+        .input-container-initial {
+            width: 100%;
+            max-width: 48rem; 
         }
-        .animate-pulse-slow {
-            animation: pulse 1.8s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        
+        .input-container-chat {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            padding: 1rem;
+            background: linear-gradient(to top, #0a0a0a 85%, transparent);
+            z-index: 50;
+            display: flex;
+            justify-content: center;
         }
-
-        /* Smooth transitions */
-        .transition-all {
-             transition: all 0.2s ease-in-out;
+        
+        .input-wrapper {
+            width: 100%;
+            max-width: 48rem; 
         }
-
-        /* Input icon styling */
-        .input-icon {
-            position: absolute;
-            left: 1rem;
-            top: 50%;
-            transform: translateY(-50%);
-            color: #6b7280; /* Gray 500 */
-            pointer-events: none; /* Make icon non-interactive */
-        }
-         input[type="text"] {
-             padding-left: 2.75rem; /* Make space for icon */
-         }
-
-         /* Button gradient */
-        .btn-gradient {
-            background-image: linear-gradient(to right, #4f46e5, #7c3aed); /* Indigo to Violet */
-        }
-        .btn-gradient:hover {
-            background-image: linear-gradient(to right, #6366f1, #8b5cf6); /* Lighter gradient on hover */
-        }
-
-        /* Source link hover effect */
-        .source-link:hover {
-            border-color: #4f46e5; /* Indigo border on hover */
-            transform: translateY(-2px); /* Subtle lift effect */
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-        }
-
     </style>
 </head>
-<body class="text-gray-300 min-h-screen flex flex-col items-center p-4">
+<body class="text-gray-300">
 
-    <div class="w-full max-w-3xl mx-auto flex flex-col h-[90vh]">
-        <header class="text-center mb-6">
-            <h1 class="header-title text-5xl font-bold text-white tracking-tight">Baler</h1>
-            <p class="text-gray-400 mt-3 text-lg">Your AI-powered music sommelier.</p>
+    <!-- Main Wrapper -->
+    <div id="main-wrapper" class="w-full max-w-3xl mx-auto p-4 transition-all layout-initial">
+        
+        <header id="app-header" class="text-center mb-6 transition-all">
+            <h1 class="header-title text-5xl font-bold text-white tracking-tight">Get 'Forked</h1>
         </header>
 
-        <div id="chat-history" class="flex-grow overflow-y-auto mb-4 p-4 space-y-4 bg-gray-900/50 border border-gray-700 rounded-lg shadow-inner">
-            <div class="mb-4 text-center">
-                <p class="text-sm text-gray-400 mb-2">Try asking for...</p>
-                <div class="flex flex-wrap gap-2 justify-center">
-                    <button class="example-query bg-gray-700/50 hover:bg-gray-600/70 text-gray-300 text-xs py-1 px-3 rounded-full transition-all border border-gray-600">a dreamy shoegaze album</button>
-                    <button class="example-query bg-gray-700/50 hover:bg-gray-600/70 text-gray-300 text-xs py-1 px-3 rounded-full transition-all border border-gray-600">aggressive punk rock</button>
-                    <button class="example-query bg-gray-700/50 hover:bg-gray-600/70 text-gray-300 text-xs py-1 px-3 rounded-full transition-all border border-gray-600">cinematic and orchestral</button>
-                </div>
-            </div>
-             <div class="flex items-start space-x-3 message-baler">
-                 <div class="flex-shrink-0 w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center text-sm font-bold text-white shadow-md">B</div>
-                 <div class="bg-gradient-to-br from-gray-700 to-gray-800 rounded-lg p-3 max-w-[80%] shadow-sm border border-gray-600/50">
-                     <p>Greetings. Ask me for a music recommendation based on mood, genre, or vibe.</p>
-                 </div>
-             </div>
+        <!-- Chat History -->
+        <div id="chat-history" class="hidden w-full mb-4 p-4 space-y-6 transition-all opacity-0 pb-48">
+            <!-- Messages will be injected here -->
         </div>
 
-        <form id="recommendation-form" class="mt-auto">
-            <div class="relative">
-                 <svg class="input-icon w-5 h-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-                     <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
-                 </svg>
-                <input
-                    type="text"
-                    id="query-input"
-                    class="w-full bg-gray-800 border border-gray-700 text-white placeholder-gray-500 rounded-lg py-3 pl-11 pr-24 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all"
-                    placeholder="Describe the music you're looking for..."
-                    required
-                    autocomplete="off"
-                >
-                <button
-                    type="submit"
-                    id="submit-button"
-                    class="absolute right-2 top-1/2 -translate-y-1/2 btn-gradient text-white font-semibold py-2 px-4 rounded-md transition-all focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-900 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed shadow-md"
-                >
-                    Send
-                </button>
+        <div id="initial-view" class="text-center mb-8 transition-all duration-500">
+            <p class="text-sm text-gray-400 mb-4">Try asking for...</p>
+            <div id="suggestions-container" class="flex justify-center px-4">
+                <!-- Single suggestion will be injected here -->
             </div>
-        </form>
+        </div>
+
+        <!-- Input Form Container -->
+        <div id="input-container" class="input-container-initial transition-all">
+            <div class="input-wrapper">
+                <form id="recommendation-form" class="w-full">
+                    <div class="relative">
+                         <svg class="input-icon w-5 h-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                             <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+                         </svg>
+                        <textarea
+                            id="query-input"
+                            rows="1"
+                            class="w-full bg-gray-800 border border-gray-700 text-white placeholder-gray-400 rounded-3xl py-4 pl-12 pr-14 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all resize-none overflow-hidden shadow-lg"
+                            placeholder="Describe the music you're looking for..."
+                            required
+                        ></textarea>
+                        <button
+                            type="submit"
+                            id="submit-button"
+                            class="absolute right-3 bottom-3 p-2 text-gray-400 hover:text-white transition-colors focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+                            aria-label="Send"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-6 h-6">
+                                <path d="M3.478 2.405a.75.75 0 00-.926.94l2.432 7.905H13.5a.75.75 0 010 1.5H4.984l-2.432 7.905a.75.75 0 00.926.94 60.519 60.519 0 0018.445-8.986.75.75 0 000-1.218A60.517 60.517 0 003.478 2.405z" />
+                            </svg>
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
     </div>
 
     <script>
@@ -134,14 +165,136 @@
         const queryInput = document.getElementById('query-input');
         const submitButton = document.getElementById('submit-button');
         const chatHistory = document.getElementById('chat-history');
-        const exampleQueryButtons = document.querySelectorAll('.example-query');
-
-        // Use a relative URL, which will work correctly in the container
+        const suggestionsContainer = document.getElementById('suggestions-container');
+        const mainWrapper = document.getElementById('main-wrapper');
+        const initialView = document.getElementById('initial-view');
+        const inputContainer = document.getElementById('input-container');
+        
         const API_URL = '/recommend';
+        const FIND_ALBUM_URL = '/find-album-url';
+
+        let hasStarted = false;
+        let remainingSources = [];
+
+        queryInput.addEventListener('input', function() {
+            this.style.height = 'auto';
+            this.style.height = (this.scrollHeight) + 'px';
+        });
+
+        queryInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                form.dispatchEvent(new Event('submit'));
+            }
+        });
+
+        const suggestionPool = [
+            "I want to listen to something that makes me feel smarter than everyone else in the room, but also deeply lonely.",
+            "Give me the most pretentious, difficult-to-listen-to album you have, I want to suffer for art.",
+            "I need a soundtrack for a heist movie where nothing gets stolen and everyone just talks about their feelings.",
+            "I want to listen to music that makes me feel like I'm floating in space, but, like, in a scary way.",
+            "I need something that combines the serenity of ambient music with the anxiety of a deadline.",
+            "I'm trying to clean my apartment but I keep getting distracted, give me something with a driving beat that isn't annoying.",
+            "I want to feel like I'm the main character in a coming-of-age movie set in a rainy coastal town in 2004.",
+            "Give me something that sounds like a computer having a panic attack but trying to hide it.",
+            "I need music for staring at the ceiling at 2 AM and questioning every decision I've made since 2015.",
+            "Something that sounds like it was recorded in a cave by people who have never seen the sun.",
+            "I want to feel like a cool vampire walking through a neon-lit city, but a vampire with good taste in synths.",
+            "Give me an album that feels like a warm hug from someone who smells like old books and coffee.",
+            "I need something aggressive enough to drown out my neighbor's lawnmower but melodic enough to not give me a headache.",
+            "Music that sounds like a glitch in the matrix, something broken but beautiful.",
+            "I want to feel like I'm in a fever dream about a circus that's slowly sinking into the ocean.",
+            "Give me something that sounds like folk music from a future where technology has collapsed.",
+            "I need a soundtrack for driving alone on a highway at night pretending I'm running away from a secret government agency.",
+            "Something that combines the energy of a punk show with the intellectual rigor of a philosophy lecture.",
+            "I want to listen to music that makes me feel like I'm floating in a sensory deprivation tank filled with warm honey.",
+            "Give me an album that sounds like a conversation between two fax machines falling in love.",
+            "I need something that sounds like a choir of ghosts singing in a reverb chamber.",
+            "Music for people who wear sunglasses indoors and unironically use a typewriter.",
+            "I want to feel like a medieval peasant who just discovered a synthesizer.",
+            "Give me something that sounds like a thunderstorm inside a library.",
+            "I need a soundtrack for disassociating in the produce aisle of a grocery store.",
+            "Something that sounds like a broken carousel at an abandoned theme park.",
+            "I want to listen to the musical equivalent of a brutalist concrete building.",
+            "Give me an album that feels like a memory of a summer that never actually happened.",
+            "Music that sounds like it was made by aliens trying to recreate human pop music from a corrupted radio transmission.",
+            "I need something that starts quiet and acoustic but slowly builds into a chaotic wall of noise.",
+            "Give me an album that sounds like a kaleidoscope looks.",
+            "I want to feel like I'm trapped in a video game that's slowly deleting itself.",
+            "Music for people who drink black coffee and read poetry on the subway.",
+            "Something that sounds like a symphony performed by insects.",
+            "I need a soundtrack for a movie about a lonely astronaut.",
+            "Give me an album that feels like a warm bath in a cold room.",
+            "Music that sounds like it was made in a laboratory by scientists trying to synthesize joy.",
+            "I want to listen to something that makes me feel like I'm walking through a fog-filled forest in a trench coat.",
+            "Give me an album that sounds like a secret whispered in a crowded room.",
+            "I need something that combines the aggression of death metal with the whimsy of a children's television show."
+        ];
+
+        function getRandomSuggestion() {
+            const randomIndex = Math.floor(Math.random() * suggestionPool.length);
+            return suggestionPool[randomIndex];
+        }
+
+        function renderSuggestions() {
+            const text = getRandomSuggestion();
+            suggestionsContainer.innerHTML = `
+                <button class="example-query text-gray-400 hover:text-indigo-300 text-sm md:text-base italic transition-colors duration-300 max-w-xl leading-relaxed">
+                    "${text}"
+                </button>
+            `;
+            
+            document.querySelector('.example-query').addEventListener('click', function() {
+                queryInput.value = this.textContent.trim().replace(/^"|"$/g, '');
+                queryInput.style.height = 'auto'; 
+                form.dispatchEvent(new Event('submit'));
+            });
+        }
+
+        renderSuggestions();
+
+        function transitionToChatMode() {
+            if (hasStarted) return;
+            hasStarted = true;
+            mainWrapper.classList.remove('layout-initial');
+            mainWrapper.classList.add('layout-chat');
+            inputContainer.classList.remove('input-container-initial');
+            inputContainer.classList.add('input-container-chat');
+            initialView.style.opacity = '0';
+            setTimeout(() => { initialView.style.display = 'none'; }, 500);
+            chatHistory.classList.remove('hidden');
+            setTimeout(() => { chatHistory.classList.remove('opacity-0'); }, 50);
+        }
 
         function setSanitizedHTML(element, htmlContent) {
             const sanitized = String(htmlContent).replace(/<script[^>]*>(?:(?!<\/script>)[^])*<\/script>/gi, '');
             element.innerHTML = sanitized;
+        }
+
+        function createSourceCardsHTML(sources) {
+            const getScoreClass = (score) => {
+                if (score >= 8.0) return 'score-bnm';
+                if (score >= 7.0) return 'score-great';
+                return 'score-good';
+            };
+            return sources.map(source => `
+                <div class="source-card">
+                    <button class="listen-on-spotify-btn w-full" data-album="${source.album_title}" data-artist="${source.artist}">
+                        <img src="${source.album_cover_url || ''}" alt="Album Art for ${source.album_title}" class="w-full h-auto rounded-md object-cover pointer-events-none ${source.album_cover_url && source.album_cover_url !== 'N/A' ? '' : 'hidden'}">
+                    </button>
+                    <div class="flex justify-between items-center mt-2">
+                        <div class="flex-grow overflow-hidden">
+                            <p class="font-bold text-sm text-slate-200 truncate">${source.album_title}</p>
+                            <p class="text-xs text-slate-400 truncate">${source.artist}</p>
+                        </div>
+                        <a href="${source.url}" target="_blank" rel="noopener noreferrer" class="flex-shrink-0 ml-2" title="View Pitchfork Review">
+                            <div class="score-circle ${getScoreClass(source.score)}">
+                                ${source.score}
+                            </div>
+                        </a>
+                    </div>
+                </div>
+            `).join('');
         }
 
         function addMessage(sender, text, sources = [], isPlaceholder = false) {
@@ -152,7 +305,7 @@
             const textBgClass = sender === 'user'
                 ? 'bg-gradient-to-br from-blue-700 to-blue-800 border-blue-600/50'
                 : 'bg-gradient-to-br from-gray-700 to-gray-800 border-gray-600/50';
-            const senderInitial = sender === 'user' ? 'U' : 'B';
+            const senderInitial = sender === 'user' ? 'U' : 'GF';
 
             const textContent = isPlaceholder ? text : marked.parse(text || '', { sanitize: true });
             const animationClass = isPlaceholder ? 'animate-pulse-slow' : '';
@@ -166,20 +319,15 @@
                 <div class="flex-shrink-0 w-8 h-8 rounded-full ${avatarClass} flex items-center justify-center text-sm font-bold text-white shadow-md">${senderInitial}</div>`;
 
             if (sender === 'baler' && sources.length > 0 && !isPlaceholder) {
-                 const sourcesHtml = `
+                // --- CHANGE: Removed "Sources:" header ---
+                const sourcesHtml = `
                     <div class="mt-4 border-t border-gray-600/50 pt-3">
-                        <h4 class="text-xs font-semibold text-gray-400 mb-2 uppercase tracking-wider">Sources:</h4>
-                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                            ${sources.map(source => `
-                                <a href="${source.url}" target="_blank" rel="noopener noreferrer" class="source-link block bg-gray-800/70 p-2 rounded-md hover:bg-gray-700/90 transition-all border border-gray-700 text-xs shadow-sm">
-                                    <p class="font-medium text-indigo-300 truncate">${source.album_title}</p>
-                                    <p class="text-gray-400 truncate">${source.artist}</p>
-                                </a>
-                            `).join('')}
+                        <div class="sources-grid grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            ${createSourceCardsHTML(sources)}
                         </div>
                     </div>`;
-                  const closingDivIndex = messageBubbleHTML.lastIndexOf('</div>');
-                  messageBubbleHTML = messageBubbleHTML.slice(0, closingDivIndex) + sourcesHtml + messageBubbleHTML.slice(closingDivIndex);
+                const closingDivIndex = messageBubbleHTML.lastIndexOf('</div>');
+                messageBubbleHTML = messageBubbleHTML.slice(0, closingDivIndex) + sourcesHtml + messageBubbleHTML.slice(closingDivIndex);
             }
 
              if (sender === 'user') {
@@ -189,19 +337,97 @@
              }
 
             chatHistory.appendChild(messageDiv);
-            chatHistory.scrollTop = chatHistory.scrollHeight;
+            window.scrollTo(0, document.body.scrollHeight);
              const contentElement = messageDiv.querySelector('.prose');
              return contentElement ? contentElement : messageDiv;
         }
+
+        function addShowMoreButton() {
+            const existingButton = document.getElementById('show-more-btn');
+            if (existingButton) existingButton.remove();
+
+            if (remainingSources.length > 0) {
+                const button = document.createElement('button');
+                button.id = 'show-more-btn';
+                button.className = 'w-full text-center py-2 text-indigo-400 hover:text-indigo-300 text-sm font-semibold relative z-10';
+                button.textContent = 'Show more';
+                chatHistory.appendChild(button);
+                window.scrollTo(0, document.body.scrollHeight);
+            } else {
+                console.log("No remaining sources to show.");
+            }
+        }
+
+        async function openSpotifyLink(album, artist, button) {
+            const originalContent = button.innerHTML;
+            button.innerHTML = '<div class="w-full h-full flex items-center justify-center"><svg class="w-8 h-8 text-white animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg></div>';
+            button.disabled = true;
+
+            const newWindow = window.open('', '_blank');
+
+            try {
+                const response = await fetch(FIND_ALBUM_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ album_title: album, artist: artist }),
+                });
+                if (!response.ok) throw new Error('Album not found on Spotify.');
+                const data = await response.json();
+                
+                if (data.album_url) {
+                    newWindow.location.href = data.album_url;
+                } else {
+                    newWindow.close();
+                    throw new Error('No Spotify URL found for this album.');
+                }
+            } catch (error) {
+                console.error('Could not get Spotify link:', error);
+                button.title = error.message;
+                newWindow.close();
+            } finally {
+                button.innerHTML = originalContent;
+                button.disabled = false;
+            }
+        }
+
+        chatHistory.addEventListener('click', async (e) => {
+            const spotifyButton = e.target.closest('.listen-on-spotify-btn');
+            if (spotifyButton && !spotifyButton.disabled) {
+                const album = spotifyButton.dataset.album;
+                const artist = spotifyButton.dataset.artist;
+                openSpotifyLink(album, artist, spotifyButton);
+            }
+
+            const showMoreButton = e.target.closest('#show-more-btn');
+            if (showMoreButton && !showMoreButton.disabled) {
+                const nextTwo = remainingSources.splice(0, 2);
+                if (nextTwo.length > 0) {
+                    const lastBalerMessage = chatHistory.querySelector('.message-baler:last-of-type');
+                    const sourcesGrid = lastBalerMessage.querySelector('.sources-grid');
+                    sourcesGrid.insertAdjacentHTML('beforeend', createSourceCardsHTML(nextTwo));
+                    window.scrollTo(0, document.body.scrollHeight);
+                }
+                if (remainingSources.length === 0) {
+                    showMoreButton.textContent = 'No more results';
+                    showMoreButton.disabled = true;
+                }
+            }
+        });
 
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
             const query = queryInput.value.trim();
             if (!query) return;
 
+            transitionToChatMode();
             addMessage('user', `<p>${query}</p>`);
             queryInput.value = '';
+            queryInput.style.height = 'auto';
             submitButton.disabled = true;
+            
+            remainingSources = []; // Reset
+            const existingShowMore = document.getElementById('show-more-btn');
+            if (existingShowMore) existingShowMore.remove();
 
             const balerResponseElement = addMessage('baler', 'Thinking...', [], true);
             let fullResponseText = '';
@@ -213,28 +439,20 @@
                 const response = await fetch(API_URL, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ text: query, top_k: 5 }),
+                    body: JSON.stringify({ text: query, top_k: 2 }),
                 });
 
                 if (!response.ok) {
                      let errorDetails = response.statusText;
                      try {
                          const errorJson = await response.json();
-                         if (errorJson.error && errorJson.error.message) {
-                             errorDetails = errorJson.error.message;
-                         } else if (errorJson.detail) {
-                             errorDetails = errorJson.detail;
-                         } else {
-                             errorDetails = JSON.stringify(errorJson);
-                         }
-                     } catch {
-                         errorDetails = await response.text();
-                     }
+                         if (errorJson.error && errorJson.error.message) { errorDetails = errorJson.error.message; }
+                         else if (errorJson.detail) { errorDetails = errorJson.detail; }
+                         else { errorDetails = JSON.stringify(errorJson); }
+                     } catch { errorDetails = await response.text(); }
                      throw new Error(`API Error ${response.status}: ${errorDetails.split('\n')[0]}`);
                 }
-                if (!response.body) {
-                     throw new Error('Response body is null.');
-                }
+                if (!response.body) { throw new Error('Response body is null.'); }
 
                 const reader = response.body.getReader();
                 const decoder = new TextDecoder();
@@ -261,31 +479,26 @@
                                 }
                                 fullResponseText += data.chunk;
                                 setSanitizedHTML(balerResponseElement, marked.parse(fullResponseText + '<span class="inline-block animate-pulse">▋</span>', { sanitize: true }));
+                                window.scrollTo(0, document.body.scrollHeight);
                             } else if (data.sources) {
                                 sourcesData = data.sources;
+                            } else if (data.remaining_sources) {
+                                remainingSources = data.remaining_sources;
+                                console.log("Received remaining sources:", remainingSources.length);
                             } else if (data.error) {
                                 encounteredError = new Error(`Backend Stream Error: ${data.error}`);
-                                break;
-                            } else if (data.response && data.sources !== undefined) {
-                                fullResponseText = data.response;
-                                sourcesData = data.sources;
-                                firstChunkReceived = true;
                                 break;
                             }
                         } catch (parseError) {
                             console.error('Error parsing stream line:', line, parseError);
-                             if (!encounteredError) {
-                                 encounteredError = new Error("Error processing response stream.");
-                             }
+                             if (!encounteredError) { encounteredError = new Error("Error processing response stream."); }
                              break;
                         }
                     }
                     if (encounteredError) break;
                 }
 
-                if (encounteredError) {
-                    throw encounteredError;
-                }
+                if (encounteredError) { throw encounteredError; }
 
                  balerResponseElement.classList.remove('animate-pulse-slow');
                  setSanitizedHTML(balerResponseElement, marked.parse(fullResponseText || '<p class="text-gray-400">(No response text received)</p>', { sanitize: true }));
@@ -293,10 +506,10 @@
                  if (sourcesData.length > 0) {
                       if (currentBalerMessageDiv) currentBalerMessageDiv.remove();
                       addMessage('baler', marked.parse(fullResponseText, { sanitize: true }), sourcesData);
+                      addShowMoreButton();
                  } else if (!fullResponseText) {
                       setSanitizedHTML(balerResponseElement, '<p class="text-gray-400">(No response text received)</p>');
                  }
-
 
             } catch (error) {
                 console.error('Processing error:', error);
@@ -307,17 +520,9 @@
 
             } finally {
                 submitButton.disabled = false;
-                setTimeout(() => { chatHistory.scrollTop = chatHistory.scrollHeight; }, 0);
+                window.scrollTo(0, document.body.scrollHeight);
             }
         });
-
-        exampleQueryButtons.forEach(button => {
-            button.addEventListener('click', () => {
-                queryInput.value = button.textContent || '';
-                form.dispatchEvent(new Event('submit'));
-            });
-        });
-
     </script>
 </body>
 </html>

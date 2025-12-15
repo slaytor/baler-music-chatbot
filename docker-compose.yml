@@ -8,13 +8,19 @@ services:
       - "8080:8080"
     environment:
       - PYTHONPATH=/app/src
-      - DB_PROVIDER=CLOUD # Assuming prod app uses cloud DB
+      - DB_PROVIDER=CLOUD
       - CHROMA_CLOUD_API_KEY=${CHROMA_CLOUD_API_KEY}
       - CHROMA_CLOUD_TENANT=${CHROMA_CLOUD_TENANT}
       - CHROMA_CLOUD_DATABASE=${CHROMA_CLOUD_DATABASE}
-      - LLM_PROVIDER=OLLAMA
+      # --- CHANGE: Switch back to OLLAMA for local app recommendations ---
+      - APP_LLM_PROVIDER=OLLAMA
+      # Provide Google credentials for Gemini (still needed if we switch back later, harmless to keep)
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/gcloud-credentials.json
+      - SPOTIFY_CLIENT_ID=${SPOTIFY_CLIENT_ID}
+      - SPOTIFY_CLIENT_SECRET=${SPOTIFY_CLIENT_SECRET}
       - OLLAMA_API_URL=http://host.docker.internal:11434/api/generate
     volumes:
+      - ./static:/app/static
       - ./reviews.jsonl:/app/reviews.jsonl
       - ./.processed_s3_files.log:/app/.processed_s3_files.log
       - ./gcloud-credentials.json:/app/gcloud-credentials.json:ro
