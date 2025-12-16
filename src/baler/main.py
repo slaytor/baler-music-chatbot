@@ -1,6 +1,8 @@
 import json
+import logging
+from datetime import datetime, timezone
 from pathlib import Path
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -10,6 +12,23 @@ from . import config
 from .database import VectorDB
 from .llm import get_llm_client
 from .music_services import SpotifyClient
+
+# --- LOGGING SETUP ---
+# Create a dedicated logger for user queries
+query_logger = logging.getLogger("user_queries")
+query_logger.setLevel(logging.INFO)
+
+# 1. Console Handler (For Cloud/Docker logs)
+console_handler = logging.StreamHandler()
+console_handler.setFormatter(logging.Formatter('%(message)s'))
+query_logger.addHandler(console_handler)
+
+# 2. File Handler (For local persistent storage)
+# We use the project root to store the log file
+log_file_path = config.PROJECT_ROOT / "user_queries.log"
+file_handler = logging.FileHandler(log_file_path)
+file_handler.setFormatter(logging.Formatter('%(message)s'))
+query_logger.addHandler(file_handler)
 
 # --- INITIALIZATION ---
 try:
@@ -50,11 +69,24 @@ class AlbumQuery(BaseModel):
 # --- API ENDPOINTS ---
 
 @app.post("/recommend")
-async def get_recommendation_stream(query: Query):
+async def get_recommendation_stream(query: Query, request: Request):
     """
     Main endpoint for recommendations.
     Orchestrates the RAG process by calling modular services.
     """
+    # --- LOGGING ---
+    # Capture the query metadata
+    log_entry = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "query": query.text,
+        "top_k": query.top_k,
+        # Attempt to get client IP (useful for distinguishing users, though often proxied)
+        "client_ip": request.client.host if request.client else "unknown"
+    }
+    # Log as a JSON string for easy parsing later
+    query_logger.info(json.dumps(log_entry))
+    # ----------------
+
     # --- CHANGE: Reduced fetch count to 20 ---
     FETCH_COUNT = 20
     raw_matches = db.search(query.text, FETCH_COUNT)

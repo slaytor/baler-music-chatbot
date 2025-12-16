@@ -12,9 +12,7 @@ services:
       - CHROMA_CLOUD_API_KEY=${CHROMA_CLOUD_API_KEY}
       - CHROMA_CLOUD_TENANT=${CHROMA_CLOUD_TENANT}
       - CHROMA_CLOUD_DATABASE=${CHROMA_CLOUD_DATABASE}
-      # --- CHANGE: Switch back to OLLAMA for local app recommendations ---
       - APP_LLM_PROVIDER=OLLAMA
-      # Provide Google credentials for Gemini (still needed if we switch back later, harmless to keep)
       - GOOGLE_APPLICATION_CREDENTIALS=/app/gcloud-credentials.json
       - SPOTIFY_CLIENT_ID=${SPOTIFY_CLIENT_ID}
       - SPOTIFY_CLIENT_SECRET=${SPOTIFY_CLIENT_SECRET}
@@ -24,6 +22,8 @@ services:
       - ./reviews.jsonl:/app/reviews.jsonl
       - ./.processed_s3_files.log:/app/.processed_s3_files.log
       - ./gcloud-credentials.json:/app/gcloud-credentials.json:ro
+      # --- NEW: Map the log file to the host ---
+      - ./user_queries.log:/app/user_queries.log
 
   # Background Worker Service for Data Pipelines
   worker:

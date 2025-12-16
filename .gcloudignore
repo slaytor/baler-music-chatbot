@@ -1,0 +1,33 @@
+# Ignore git history and config
+.git/
+.gitignore
+
+# Ignore local virtual environments
+.venv/
+venv/
+env/
+
+# Ignore Python cache files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Ignore local Docker and log files
+docker-compose.yml
+# Dockerfile <-- REMOVED: We need this for Cloud Build!
+user_queries.log
+.processed_s3_files.log
+
+# Ignore local IDE and terminal configs
+.idea/
+.vscode/
+.config/
+.DS_Store
+
+# Ignore the local Chroma database if it exists
+chroma_db/
+
+# Ignore the raw data file (it's large and not needed for the app build)
+reviews.jsonl
+reviews_with_art.jsonl
