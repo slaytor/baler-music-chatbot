@@ -1,12 +1,14 @@
 import asyncio
 import json
 import time
-from typing import AsyncGenerator, Union
+from typing import AsyncGenerator
 
 import httpx
+# --- NEW: Import Google Auth libraries ---
+import google.auth
+import google.auth.transport.requests
 
 from . import config
-from .auth_util import get_gcp_auth_token
 
 # --- CONSTANTS ---
 
@@ -45,51 +47,6 @@ class OllamaClient:
     def __init__(self):
         self.api_url = config.OLLAMA_API_URL
         self.model = config.OLLAMA_MODEL
-
-    def _clean_tags(self, tags: list[str]) -> list[str]:
-        """Post-processes the raw output from the LLM to remove conversational noise."""
-        cleaned_tags = []
-        bad_phrases = ["here are", "note that", "happy to help", "review excerpt", "keywords", "phrases"]
-        
-        for tag in tags:
-            tag_lower = tag.lower()
-            if len(tag) > 75: continue
-            if any(phrase in tag_lower for phrase in bad_phrases): continue
-            cleaned_tags.append(tag)
-        return cleaned_tags
-
-    async def generate_tags_for_chunk(
-        self, client: httpx.AsyncClient, chunk: str
-    ) -> list[str]:
-        """Uses a local Ollama model to extract descriptive tags from a text chunk."""
-        prompt = (
-            "You are an expert musicologist. Analyze the following excerpt from a music review. "
-            "Extract 5-7 descriptive keywords and phrases that capture the mood, genre, "
-            "and instrumentation.\n\n"
-            f'REVIEW EXCERPT:\n"...{chunk}..."\n\n'
-            "Your response MUST be a single line of comma-separated values. Do not use JSON. "
-            "For example: dreamy, shimmering guitars, hazy atmosphere, introspective"
-        )
-
-        payload = {"model": self.model, "prompt": prompt, "stream": False}
-
-        try:
-            response = await client.post(self.api_url, json=payload, timeout=300.0)
-            response.raise_for_status()
-            response_data = response.json()
-            
-            raw_output = response_data.get("response", "")
-            if not raw_output: return []
-
-            raw_tags = [tag.strip() for tag in raw_output.split(',') if tag.strip()]
-            return self._clean_tags(raw_tags)
-
-        except httpx.RequestError as e:
-            print(f"\n--- OLLAMA CONNECTION ERROR ---\nCould not connect to Ollama at {self.api_url}\nPlease ensure the Ollama application is running.\nError details: {e!r}\n---------------------------------\n")
-            return []
-        except Exception as e:
-            print(f"An unexpected error occurred in OllamaClient: {type(e).__name__}: {e}")
-            return []
 
     async def stream_response(
         self, query_text: str, context_chunks: list[dict]
@@ -137,73 +94,17 @@ class GeminiClient:
 
     def __init__(self):
         self.api_url_base = f"https://generativelanguage.googleapis.com/v1beta/models/{config.GEMINI_MODEL}"
-        self.auth_token = None
-        self.token_gen_time = 0
-
-    def _get_token(self):
-        """Fetches or refreshes the GCP auth token."""
-        print("Getting/Refreshing GCP Authentication Token...")
-        self.auth_token = get_gcp_auth_token()
-        self.token_gen_time = time.time()
-        if not self.auth_token:
-            raise Exception("FATAL: Could not get GCP auth token.")
-        print("Token refreshed successfully.")
-
-    def _check_token(self):
-        """Checks if the token is expired and refreshes it if needed."""
-        if not self.auth_token or time.time() - self.token_gen_time > config.TOKEN_LIFESPAN_SECONDS:
-            self._get_token()
-
-    def _get_headers(self) -> dict:
-        """Returns the required authentication headers."""
-        self._check_token()
-        return {"Authorization": f"Bearer {self.auth_token}"}
-
-    async def generate_tags_for_chunk(
-        self, client: httpx.AsyncClient, chunk: str
-    ) -> list[str]:
-        """Uses Gemini to extract descriptive tags from a text chunk, with retries."""
-        prompt = (
-            "You are an expert musicologist. Analyze the following excerpt from a music review. "
-            "Extract a list of 5-7 descriptive keywords and phrases that capture the mood, genre, "
-            "instrumentation, and overall sonic texture. Focus on evocative adjectives.\n\n"
-            f'REVIEW EXCERPT:\n"...{chunk}..."\n\n'
-            "Return ONLY a JSON list of strings. For example: "
-            '["dream-pop", "shimmering guitars", "hazy atmosphere", "ethereal vocals", "introspective"]'
+        # --- NEW: Use google-auth to handle credentials automatically ---
+        self.credentials, self.project_id = google.auth.default(
+            scopes=["https://www.googleapis.com/auth/cloud-platform"]
         )
 
-        api_url = f"{self.api_url_base}:generateContent"
-        payload = {"contents": [{"parts": [{"text": prompt}]}]}
-
-        for attempt in range(5):
-            try:
-                response = await client.post(api_url, json=payload, headers=self._get_headers(), timeout=45.0)
-                response.raise_for_status()
-                response_data = response.json()
-                if "candidates" in response_data and response_data["candidates"]:
-                    content = response_data["candidates"][0]["content"]["parts"][0]["text"]
-                    json_str = content.strip().replace("```json", "").replace("```", "")
-                    if not json_str: return []
-                    return json.loads(json_str)
-                else:
-                    return []
-            except httpx.HTTPStatusError as e:
-                if e.response.status_code in [401, 403]:
-                    print(f"Auth error: {e.response.text}. Attempting token refresh...")
-                    self._get_token()
-                    continue
-                elif e.response.status_code in [429, 503]:
-                    wait_time = (2**attempt) + 1
-                    print(f"API Error {e.response.status_code}. Retrying in {wait_time} seconds...")
-                    await asyncio.sleep(wait_time)
-                else:
-                    print(f"Non-retryable HTTP Error: {e.response.text}")
-                    return []
-            except Exception as e:
-                print(f"Error generating tags: {e}")
-                return []
-        print("API is still unavailable after multiple retries. Skipping chunk.")
-        return []
+    def _get_auth_headers(self) -> dict:
+        """Gets valid authentication headers, refreshing the token if needed."""
+        # The google-auth library handles caching and refreshing automatically.
+        auth_req = google.auth.transport.requests.Request()
+        self.credentials.refresh(auth_req)
+        return {"Authorization": f"Bearer {self.credentials.token}"}
 
     async def stream_response(
         self, query_text: str, context_chunks: list[dict]
@@ -219,8 +120,9 @@ class GeminiClient:
         payload = {"contents": [{"parts": [{"text": full_prompt}]}]}
 
         try:
+            headers = self._get_auth_headers()
             async with httpx.AsyncClient() as client:
-                async with client.stream("POST", api_url, json=payload, headers=self._get_headers(), timeout=60.0) as response:
+                async with client.stream("POST", api_url, json=payload, headers=headers, timeout=60.0) as response:
                     if response.status_code != 200:
                         error_content = await response.aread()
                         yield json.dumps({"error": f"Gemini API Error {response.status_code}: {error_content.decode()}"}) + "\n"

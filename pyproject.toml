@@ -1,34 +1,28 @@
 [tool.poetry]
-name = "baler"
+name = "baler-music-chatbot"
 version = "0.1.0"
-description = "A music recommendation chatbot powered by Pitchfork reviews"
-authors = ["Sam Taylor <sam.bernick.taylor@gmail.com>"]
-license = "MIT"
+description = "A music recommendation chatbot using Pitchfork reviews"
+authors = ["Your Name <you@example.com>"]
 readme = "README.md"
 
 [tool.poetry.dependencies]
-python = "~3.12"
-scrapy = ">=2.11.0,<3.0.0"
-pandas = ">=2.2.0,<3.0.0"
-python-dotenv = ">=1.0.0,<2.0.0"
-scrapy-impersonate = ">=1.6.1,<2.0.0"
-scrapy-playwright = ">=0.0.44,<0.1.0"
-pyarrow = ">=16.0.0,<17.0.0"
-sentence-transformers = ">=2.7.0,<3.0.0"
-tqdm = ">=4.66.0,<5.0.0"
+python = "^3.12"
+fastapi = "^0.111.0"
+uvicorn = {extras = ["standard"], version = "^0.30.1"}
+python-dotenv = "^1.0.1"
 chromadb = ">=0.5.0"
-numpy = "<2.0.0"
-boto3 = ">=1.34.0,<2.0.0"
-fastapi = ">=0.111.0,<0.112.0"
-uvicorn = {extras = ["standard"], version = ">=0.29.0,<0.30.0"}
-google-generativeai = ">=0.5.0,<0.6.0"
-torch = ">=2.3.0"
+sentence-transformers = "^3.0.1"
+pandas = "^2.2.2"
+torch = "^2.3.1"
+pydantic = "^2.7.4"
+httpx = "^0.27.0"
+scrapy = "^2.11.2"
+boto3 = "^1.34.125"
+google-auth = "^2.30.0" # --- NEW: Add google-auth library ---
 
 [tool.poetry.group.dev.dependencies]
-black = ">=24.0.0"
-ruff = ">=0.1.0"
-jupyterlab = ">=4.0.0"
+ipykernel = "^6.29.4"
 
 [build-system]
-requires = ["poetry-core>=1.0.0"]
+requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
