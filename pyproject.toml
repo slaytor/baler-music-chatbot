@@ -18,7 +18,8 @@ pydantic = "^2.7.4"
 httpx = "^0.27.0"
 scrapy = "^2.11.2"
 boto3 = "^1.34.125"
-google-auth = "^2.30.0" # --- NEW: Add google-auth library ---
+google-auth = "^2.30.0"
+playwright = "^1.44.0" # --- NEW: Add Playwright for scraping ---
 
 [tool.poetry.group.dev.dependencies]
 ipykernel = "^6.29.4"
