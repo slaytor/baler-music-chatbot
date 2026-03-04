@@ -96,6 +96,13 @@ async def get_recommendation_stream(query: Query, request: Request):
     candidates = db.hybrid_search(query.text, top_k=50)
     unique_matches = db.rerank(query.text, candidates)
 
+    # Filter out albums by artists the user explicitly mentioned — they want novel discoveries
+    query_lower = query.text.lower()
+    unique_matches = [
+        m for m in unique_matches
+        if m.get("artist", "").lower() not in query_lower
+    ]
+
     if not unique_matches:
 
         async def empty_stream():
