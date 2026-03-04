@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -99,9 +100,70 @@ async def get_recommendation_stream(query: Query, request: Request):
     # Filter out albums by artists the user explicitly mentioned — they want novel discoveries
     query_lower = query.text.lower()
     unique_matches = [
-        m for m in unique_matches
-        if m.get("artist", "").lower() not in query_lower
+        m for m in unique_matches if m.get("artist", "").lower() not in query_lower
     ]
+
+    # Filter out albums where name-token overlap with the query is the likely reason
+    # they surfaced (e.g. "Lotus Eater" ranking for "Flying Lotus" due to shared "lotus").
+    # Only meaningful tokens (5+ chars, not generic music/query words) are checked.
+    _GENERIC_TOKENS = {
+        "about",
+        "after",
+        "again",
+        "album",
+        "along",
+        "around",
+        "based",
+        "bring",
+        "could",
+        "every",
+        "feels",
+        "genre",
+        "going",
+        "great",
+        "group",
+        "heavy",
+        "indie",
+        "known",
+        "label",
+        "large",
+        "later",
+        "listen",
+        "looking",
+        "music",
+        "other",
+        "people",
+        "quite",
+        "really",
+        "releases",
+        "since",
+        "something",
+        "sound",
+        "their",
+        "there",
+        "these",
+        "those",
+        "through",
+        "times",
+        "track",
+        "where",
+        "which",
+        "while",
+        "would",
+    }
+    query_tokens = {
+        t for t in re.findall(r"\b[a-z]{5,}\b", query_lower) if t not in _GENERIC_TOKENS
+    }
+    if query_tokens:
+
+        def _has_name_overlap(m: dict) -> bool:
+            artist_tok = set(re.findall(r"\b[a-z]{5,}\b", m.get("artist", "").lower()))
+            title_tok = set(
+                re.findall(r"\b[a-z]{5,}\b", m.get("album_title", "").lower())
+            )
+            return bool(query_tokens & (artist_tok | title_tok))
+
+        unique_matches = [m for m in unique_matches if not _has_name_overlap(m)]
 
     if not unique_matches:
 
