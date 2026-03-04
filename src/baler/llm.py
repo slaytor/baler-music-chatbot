@@ -96,7 +96,10 @@ class GeminiClient:
         self.api_url_base = f"https://generativelanguage.googleapis.com/v1beta/models/{config.GEMINI_MODEL}"
         # --- NEW: Use google-auth to handle credentials automatically ---
         self.credentials, self.project_id = google.auth.default(
-            scopes=["https://www.googleapis.com/auth/cloud-platform"]
+            scopes=[
+                "https://www.googleapis.com/auth/cloud-platform",
+                "https://www.googleapis.com/auth/generative-language",
+            ]
         )
 
     def _get_auth_headers(self) -> dict:

@@ -1,23 +1,27 @@
+import hashlib
 import json
+import logging
 import time
+
 import chromadb
 import pandas as pd
-import hashlib
-import logging
 import torch
-from sentence_transformers import SentenceTransformer
+from rank_bm25 import BM25Okapi
+from sentence_transformers import CrossEncoder, SentenceTransformer
 
 from . import config
+
 
 # --- HELPER FUNCTION FOR DEVICE SELECTION ---
 def get_optimal_device():
     """Automatically select the best device for SentenceTransformer."""
     if torch.backends.mps.is_available():
         logging.info("Apple MPS (GPU) is available. Using 'mps'.")
-        return 'mps'
+        return "mps"
     else:
         logging.info("No specialized hardware found. Using 'cpu'.")
-        return 'cpu'
+        return "cpu"
+
 
 class VectorDB:
     """Handles all interactions with the ChromaDB vector database."""
@@ -25,27 +29,42 @@ class VectorDB:
     def __init__(self):
         if config.DB_PROVIDER.upper() == "CLOUD":
             logging.info("Initializing ChromaDB client... Connecting to Chroma Cloud.")
-            if not all([config.CHROMA_CLOUD_API_KEY, config.CHROMA_CLOUD_TENANT, config.CHROMA_CLOUD_DATABASE]):
-                raise ValueError("CHROMA_CLOUD_API_KEY, CHROMA_CLOUD_TENANT, and CHROMA_CLOUD_DATABASE must be set for CLOUD provider.")
+            if not all(
+                [
+                    config.CHROMA_CLOUD_API_KEY,
+                    config.CHROMA_CLOUD_TENANT,
+                    config.CHROMA_CLOUD_DATABASE,
+                ]
+            ):
+                raise ValueError(
+                    "CHROMA_CLOUD_API_KEY, CHROMA_CLOUD_TENANT, and CHROMA_CLOUD_DATABASE must be set for CLOUD provider."
+                )
             self.client = chromadb.CloudClient(
                 api_key=config.CHROMA_CLOUD_API_KEY,
                 tenant=config.CHROMA_CLOUD_TENANT,
-                database=config.CHROMA_CLOUD_DATABASE
+                database=config.CHROMA_CLOUD_DATABASE,
             )
-        else: # Default to LOCAL
-            logging.info(f"Initializing ChromaDB client... Connecting to local Docker at {config.CHROMA_HOST}:{config.CHROMA_PORT}")
+        else:  # Default to LOCAL
+            logging.info(
+                f"Initializing ChromaDB client... Connecting to local Docker at {config.CHROMA_HOST}:{config.CHROMA_PORT}"
+            )
             self.client = chromadb.HttpClient(
                 host=config.CHROMA_HOST, port=config.CHROMA_PORT
             )
-        
+
         self._wait_for_chroma()
         self.collection = self.client.get_or_create_collection(
             name=config.COLLECTION_NAME
         )
-        
+
         device = get_optimal_device()
         self.model = SentenceTransformer(config.EMBEDDING_MODEL_NAME, device=device)
+        self.cross_encoder = CrossEncoder(
+            "cross-encoder/ms-marco-MiniLM-L6-v2", device=device
+        )
         logging.info("ChromaDB connection successful.")
+
+        self._build_bm25_index()
 
     def _wait_for_chroma(self, timeout: int = 60):
         """Waits for the ChromaDB server to be available."""
@@ -60,6 +79,36 @@ class VectorDB:
                 time.sleep(5)
         raise TimeoutError("ChromaDB server did not start in time.")
 
+    def _build_bm25_index(self):
+        """Fetch all documents from ChromaDB and build an in-memory BM25 index."""
+        count = self.get_count()
+        if count == 0:
+            logging.warning("Collection is empty — BM25 index not built.")
+            self.bm25_index = None
+            self.bm25_corpus_metadatas = []
+            return
+
+        logging.info(f"Building BM25 index from {count} documents...")
+        all_documents = []
+        all_metadatas = []
+        batch_size = 250
+
+        for offset in range(0, count, batch_size):
+            logging.info(f"Fetching BM25 corpus batch at offset {offset}...")
+            items = self.collection.get(
+                limit=batch_size,
+                offset=offset,
+                include=["metadatas", "documents"],
+            )
+            if items and items.get("documents"):
+                all_documents.extend(items["documents"])
+                all_metadatas.extend(items["metadatas"])
+
+        tokenized_corpus = [doc.lower().split() for doc in all_documents]
+        self.bm25_index = BM25Okapi(tokenized_corpus)
+        self.bm25_corpus_metadatas = all_metadatas
+        logging.info(f"BM25 index built with {len(all_documents)} documents.")
+
     def get_count(self) -> int:
         """Returns the total number of items in the collection."""
         return self.collection.count()
@@ -68,7 +117,9 @@ class VectorDB:
         """Returns a set of all review_urls already in the database."""
         try:
             count = self.get_count()
-            logging.info(f"Collection '{self.collection.name}' reports {count} records.")
+            logging.info(
+                f"Collection '{self.collection.name}' reports {count} records."
+            )
             if count == 0:
                 return set()
 
@@ -79,13 +130,13 @@ class VectorDB:
                 items = self.collection.get(
                     limit=batch_size,
                     offset=offset,
-                    include=["metadatas"]
+                    include=["metadatas"],
                 )
                 if items and items["metadatas"]:
                     for meta in items["metadatas"]:
                         if "review_url" in meta:
                             all_urls.add(meta["review_url"])
-            
+
             logging.info(f"Total unique URLs found in database: {len(all_urls)}")
             return all_urls
         except Exception as e:
@@ -96,31 +147,109 @@ class VectorDB:
         """
         Embeds a query and searches the database, returning the top_k results
         with an optional offset.
-        
+
         Since ChromaDB's query() method does not support an 'offset' parameter,
         we fetch (offset + top_k) results and slice the list manually.
         """
         query_embedding = self.model.encode([query_text]).tolist()
-        
-        # Fetch enough results to cover the offset
+
         fetch_count = offset + top_k
-        
+
         results = self.collection.query(
-            query_embeddings=query_embedding,
-            n_results=fetch_count
+            query_embeddings=query_embedding, n_results=fetch_count
         )
-        
+
         if not results or not results.get("metadatas") or not results["metadatas"][0]:
             return []
-            
+
         all_metadatas = results["metadatas"][0]
-        
-        # If we don't have enough results to reach the offset, return empty
+
         if len(all_metadatas) <= offset:
             return []
-            
-        # Slice the results to return only the requested page
+
         return all_metadatas[offset : offset + top_k]
+
+    def bm25_search(self, query_text: str, top_k: int) -> list:
+        """Returns top_k metadata records ranked by BM25 keyword score."""
+        if self.bm25_index is None:
+            return []
+        tokenized_query = query_text.lower().split()
+        scores = self.bm25_index.get_scores(tokenized_query)
+        top_indices = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)[
+            :top_k
+        ]
+        return [self.bm25_corpus_metadatas[i] for i in top_indices]
+
+    def hybrid_search(self, query_text: str, top_k: int = 50) -> list:
+        """
+        Two-layer retrieval: BM25 (sparse) + ChromaDB vector (dense), fused with
+        Reciprocal Rank Fusion (RRF). Returns top_k fused candidates.
+        """
+        CANDIDATE_COUNT = 100
+        RRF_K = 60
+
+        # --- BM25 layer ---
+        bm25_results = self.bm25_search(query_text, CANDIDATE_COUNT)
+
+        # --- Dense vector layer ---
+        query_embedding = self.model.encode([query_text]).tolist()
+        chroma_results = self.collection.query(
+            query_embeddings=query_embedding,
+            n_results=CANDIDATE_COUNT,
+            include=["metadatas"],
+        )
+        chroma_metadatas = (
+            chroma_results["metadatas"][0]
+            if chroma_results and chroma_results.get("metadatas")
+            else []
+        )
+
+        # --- RRF fusion ---
+        def chunk_key(meta: dict) -> str:
+            return hashlib.sha256(
+                f"{meta.get('review_url', '')}{meta.get('text_chunk', '')}".encode()
+            ).hexdigest()
+
+        rrf_scores: dict[str, float] = {}
+        meta_lookup: dict[str, dict] = {}
+
+        for rank, meta in enumerate(bm25_results):
+            key = chunk_key(meta)
+            rrf_scores[key] = rrf_scores.get(key, 0.0) + 1 / (RRF_K + rank + 1)
+            meta_lookup[key] = meta
+
+        for rank, meta in enumerate(chroma_metadatas):
+            key = chunk_key(meta)
+            rrf_scores[key] = rrf_scores.get(key, 0.0) + 1 / (RRF_K + rank + 1)
+            meta_lookup[key] = meta
+
+        sorted_keys = sorted(
+            rrf_scores.keys(), key=lambda k: rrf_scores[k], reverse=True
+        )
+        return [meta_lookup[k] for k in sorted_keys[:top_k]]
+
+    def rerank(self, query_text: str, candidates: list) -> list:
+        """
+        Cross-encoder re-ranking over (query, text_chunk) pairs.
+        Deduplicates by review_url, keeping the highest-scoring chunk per album.
+        """
+        if not candidates:
+            return []
+
+        pairs = [(query_text, meta.get("text_chunk", "")) for meta in candidates]
+        scores = self.cross_encoder.predict(pairs)
+
+        scored = sorted(zip(scores, candidates), key=lambda x: x[0], reverse=True)
+
+        seen_urls: set[str] = set()
+        result = []
+        for _score, meta in scored:
+            url = meta.get("review_url")
+            if url and url not in seen_urls:
+                seen_urls.add(url)
+                result.append(meta)
+
+        return result
 
     def add_batch(self, enriched_df: pd.DataFrame):
         """
@@ -151,11 +280,11 @@ class VectorDB:
             meta = row.to_dict()
             meta.pop("search_document", None)
             meta["tags"] = json.dumps(meta.get("tags", []))
-            
+
             for key, value in meta.items():
                 if value is None:
                     meta[key] = "N/A"
-            
+
             metadatas.append(meta)
 
         batch_size = 100
@@ -165,7 +294,9 @@ class VectorDB:
                     ids=ids[i : i + batch_size],
                     embeddings=embeddings[i : i + batch_size].tolist(),
                     metadatas=metadatas[i : i + batch_size],
-                    documents=enriched_df["search_document"].tolist()[i : i + batch_size]
+                    documents=enriched_df["search_document"].tolist()[
+                        i : i + batch_size
+                    ],
                 )
             except Exception as e:
                 logging.error(f"Error upserting batch {i} to ChromaDB: {e}")
