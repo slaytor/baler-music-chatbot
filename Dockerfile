@@ -31,7 +31,7 @@ RUN mkdir /cache
 # Set the environment variable to use this directory (the modern approach)
 ENV HF_HOME=/cache
 # Run the download as root, which will place the model in /cache
-RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')"
+RUN python -c "from sentence_transformers import SentenceTransformer, CrossEncoder; SentenceTransformer('all-MiniLM-L6-v2'); CrossEncoder('cross-encoder/ms-marco-MiniLM-L6-v2')"
 
 # Copy the application source code
 COPY src/ ./src/
