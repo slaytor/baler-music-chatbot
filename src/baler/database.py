@@ -230,8 +230,9 @@ class VectorDB:
 
     def rerank(self, query_text: str, candidates: list) -> list:
         """
-        Cross-encoder re-ranking over (query, text_chunk) pairs.
-        Deduplicates by review_url, keeping the highest-scoring chunk per album.
+        Cross-encoder re-ranking over (query, text_chunk) pairs, with a genre
+        coherence boost. Deduplicates by review_url, keeping the highest-scoring
+        chunk per album.
         """
         if not candidates:
             return []
@@ -239,17 +240,87 @@ class VectorDB:
         pairs = [(query_text, meta.get("text_chunk", "")) for meta in candidates]
         scores = self.cross_encoder.predict(pairs)
 
+        # Initial sort to identify top genres
         scored = sorted(zip(scores, candidates), key=lambda x: x[0], reverse=True)
+
+        top_genres: set[str] = set()
+        seen: set[str] = set()
+        for _score, meta in scored:
+            url = meta.get("review_url")
+            if url and url not in seen:
+                seen.add(url)
+                try:
+                    genres = json.loads(meta.get("artist_genres", "[]"))
+                    top_genres.update(g.lower() for g in genres)
+                except (json.JSONDecodeError, TypeError):
+                    pass
+            if len(seen) >= 5:
+                break
+
+        # Re-score with a gentle genre coherence boost (0.1 per overlapping genre)
+        def boosted(score: float, meta: dict) -> float:
+            try:
+                genres = {g.lower() for g in json.loads(meta.get("artist_genres", "[]"))}
+            except (json.JSONDecodeError, TypeError):
+                genres = set()
+            return score + len(genres & top_genres) * 0.1
+
+        scored_boosted = sorted(
+            ((boosted(s, m), m) for s, m in zip(scores, candidates)),
+            key=lambda x: x[0],
+            reverse=True,
+        )
 
         seen_urls: set[str] = set()
         result = []
-        for _score, meta in scored:
+        for _score, meta in scored_boosted:
             url = meta.get("review_url")
             if url and url not in seen_urls:
                 seen_urls.add(url)
                 result.append(meta)
 
         return result
+
+    def expand_with_related_artists(self, query_text: str, top_results: list) -> list:
+        """
+        Takes the top results, extracts their related_artists, and fetches additional
+        candidate albums by those artists via vector search. Returns candidates not
+        already in top_results, for use as discovery/"show more" entries.
+        """
+        top_urls = {m.get("review_url") for m in top_results}
+        top_artists = {m.get("artist", "").lower() for m in top_results}
+
+        related_names: set[str] = set()
+        for meta in top_results[:5]:
+            try:
+                related = json.loads(meta.get("related_artists", "[]"))
+                for name in related[:5]:
+                    if name.lower() not in top_artists:
+                        related_names.add(name)
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+        if not related_names:
+            return []
+
+        query_embedding = self.model.encode([query_text]).tolist()
+        try:
+            results = self.collection.query(
+                query_embeddings=query_embedding,
+                n_results=50,
+                where={"artist": {"$in": list(related_names)}},
+                include=["metadatas"],
+            )
+            candidates = (
+                results["metadatas"][0]
+                if results and results.get("metadatas")
+                else []
+            )
+        except Exception as e:
+            logging.warning(f"Related artist expansion failed: {e}")
+            return []
+
+        return [m for m in candidates if m.get("review_url") not in top_urls]
 
     def add_batch(self, enriched_df: pd.DataFrame):
         """

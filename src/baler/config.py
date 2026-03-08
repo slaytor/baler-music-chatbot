@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+
 from dotenv import load_dotenv
 
 # --- PROJECT ROOT ---
@@ -26,6 +27,8 @@ OLLAMA_API_URL = os.getenv("OLLAMA_API_URL", "http://localhost:11434/api/generat
 # --- MUSIC SERVICE CONFIGURATION ---
 SPOTIFY_CLIENT_ID = os.getenv("SPOTIFY_CLIENT_ID")
 SPOTIFY_CLIENT_SECRET = os.getenv("SPOTIFY_CLIENT_SECRET")
+LASTFM_API_KEY = os.getenv("LASTFM_API_KEY")
+LASTFM_API_SECRET = os.getenv("LASTFM_API_SECRET")
 
 # --- AUTHENTICATION ---
 CREDENTIALS_FILE_NAME = "gcloud-credentials.json"

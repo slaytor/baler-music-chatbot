@@ -1,12 +1,9 @@
-import asyncio
 import json
-import time
-from typing import AsyncGenerator
+from collections.abc import AsyncGenerator
 
-import httpx
-# --- NEW: Import Google Auth libraries ---
 import google.auth
 import google.auth.transport.requests
+import httpx
 
 from . import config
 
@@ -19,8 +16,31 @@ SYSTEM_PROMPT = (
     "IMPORTANT: When recommending an album, refer to it by the exact title provided in the context. "
     "If the review is for a compilation (Various Artists), recommend the compilation itself, "
     "but feel free to highlight specific artists mentioned within it as reasons to listen. "
+    "Each album entry includes genre tags and related artists — use these to draw sharp, "
+    "specific connections between recommendations and the user's taste. Mention genres and "
+    "sonic relationships where they illuminate why an album fits the query. "
     "Present one main recommendation, and one alternate choice."
 )
+
+
+def _format_context_entry(c: dict) -> str:
+    """Format a single context chunk with structured metadata for the LLM."""
+    try:
+        genres = json.loads(c.get("artist_genres", "[]")) if c.get("artist_genres") else []
+    except (json.JSONDecodeError, TypeError):
+        genres = []
+    try:
+        related = json.loads(c.get("related_artists", "[]")) if c.get("related_artists") else []
+    except (json.JSONDecodeError, TypeError):
+        related = []
+
+    lines = [f"Album: '{c['album_title']}' by {c['artist']}"]
+    if genres:
+        lines.append(f"Genres: {', '.join(genres)}")
+    if related:
+        lines.append(f"Related artists: {', '.join(related[:5])}")
+    lines.append(f"Review excerpt: ...{c['text_chunk']}...")
+    return "\n".join(lines)
 
 # --- CLIENT FACTORY ---
 
@@ -52,10 +72,7 @@ class OllamaClient:
         self, query_text: str, context_chunks: list[dict]
     ) -> AsyncGenerator[str, None]:
         """Streams a chat response from Ollama based on the query and context."""
-        context_str = "\n\n".join(
-            [f"From a review of '{c['album_title']}' by {c['artist']}:\n...{c['text_chunk']}..." for c in context_chunks]
-        )
-        
+        context_str = "\n\n".join(_format_context_entry(c) for c in context_chunks)
         full_prompt = f"CONTEXT FROM REVIEWS:\n{context_str}\n\nUSER'S QUERY: '{query_text}'"
 
         payload = {"model": self.model, "system": SYSTEM_PROMPT, "prompt": full_prompt, "stream": True}
@@ -113,10 +130,7 @@ class GeminiClient:
         self, query_text: str, context_chunks: list[dict]
     ) -> AsyncGenerator[str, None]:
         """Streams a chat response from Gemini based on the query and context."""
-        context_str = "\n\n".join(
-            [f"From a review of '{c['album_title']}' by {c['artist']}:\n...{c['text_chunk']}..." for c in context_chunks]
-        )
-
+        context_str = "\n\n".join(_format_context_entry(c) for c in context_chunks)
         full_prompt = f"{SYSTEM_PROMPT}\n\nCONTEXT FROM REVIEWS:\n{context_str}\n\nUSER'S QUERY: '{query_text}'"
         
         api_url = f"{self.api_url_base}:streamGenerateContent?alt=sse"

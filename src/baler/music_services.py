@@ -1,9 +1,70 @@
+import asyncio
 import base64
 import time
 
 import httpx
 
 from . import config
+
+
+class LastFmClient:
+    """
+    Fetches artist metadata from the Last.fm API.
+    - artist_genres: top user-applied tags (genres/styles)
+    - related_artists: similar artists based on listening patterns
+    """
+
+    BASE_URL = "https://ws.audioscrobbler.com/2.0/"
+
+    def __init__(self):
+        self.api_key = config.LASTFM_API_KEY
+
+    async def get_metadata(self, artist: str, album: str) -> dict:
+        """
+        Returns artist_genres and related_artists.
+        Fetches album.getTopTags, artist.getTopTags, and artist.getSimilar in parallel.
+        Uses album tags if available, falls back to artist tags.
+        Never raises — returns empty lists on failure.
+        """
+        async with httpx.AsyncClient(timeout=15) as client:
+            album_tags_task = client.get(self.BASE_URL, params={
+                "method": "album.getTopTags",
+                "artist": artist,
+                "album": album,
+                "api_key": self.api_key,
+                "format": "json",
+                "autocorrect": 1,
+            })
+            artist_tags_task = client.get(self.BASE_URL, params={
+                "method": "artist.getTopTags",
+                "artist": artist,
+                "api_key": self.api_key,
+                "format": "json",
+                "autocorrect": 1,
+            })
+            similar_task = client.get(self.BASE_URL, params={
+                "method": "artist.getSimilar",
+                "artist": artist,
+                "api_key": self.api_key,
+                "format": "json",
+                "limit": 10,
+                "autocorrect": 1,
+            })
+            album_tags_resp, artist_tags_resp, similar_resp = await asyncio.gather(
+                album_tags_task, artist_tags_task, similar_task, return_exceptions=True
+            )
+
+        genres = []
+        if isinstance(album_tags_resp, httpx.Response) and album_tags_resp.status_code == 200:
+            genres = [t["name"] for t in album_tags_resp.json().get("tags", {}).get("tag", [])[:10]]
+        if not genres and isinstance(artist_tags_resp, httpx.Response) and artist_tags_resp.status_code == 200:
+            genres = [t["name"] for t in artist_tags_resp.json().get("toptags", {}).get("tag", [])[:10]]
+
+        related = []
+        if isinstance(similar_resp, httpx.Response) and similar_resp.status_code == 200:
+            related = [a["name"] for a in similar_resp.json().get("similarartists", {}).get("artist", [])[:10]]
+
+        return {"artist_genres": genres, "related_artists": related}
 
 
 class SpotifyRateLimitError(Exception):

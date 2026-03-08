@@ -97,6 +97,16 @@ async def get_recommendation_stream(query: Query, request: Request):
     candidates = db.hybrid_search(query.text, top_k=50)
     unique_matches = db.rerank(query.text, candidates)
 
+    # Expand candidate pool with albums by related artists of top results
+    expanded = db.expand_with_related_artists(query.text, unique_matches[:5])
+    if expanded:
+        expanded_reranked = db.rerank(query.text, expanded)
+        existing_urls = {m.get("review_url") for m in unique_matches}
+        for m in expanded_reranked:
+            if m.get("review_url") not in existing_urls:
+                unique_matches.append(m)
+                existing_urls.add(m.get("review_url"))
+
     # Filter out albums by artists the user explicitly mentioned — they want novel discoveries
     query_lower = query.text.lower()
     unique_matches = [
