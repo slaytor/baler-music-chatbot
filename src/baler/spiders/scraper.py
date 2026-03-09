@@ -22,8 +22,21 @@ class ReviewItem:
 class PitchforkSpider(scrapy.Spider):
     name = "pitchfork_reviews"
 
-    def __init__(self, start_page=1, max_pages=None, previous_file=None, *args, **kwargs):
+    def __init__(self, start_page=1, max_pages=None, previous_file=None, url_file=None, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.url_file = url_file
+
+        # url_file mode: skip listing page crawl entirely
+        if self.url_file:
+            self.logger.info(f"url_file mode: loading URLs from {self.url_file}")
+            url_path = Path(self.url_file)
+            if not url_path.exists():
+                raise FileNotFoundError(f"url_file not found: {self.url_file}")
+            self.direct_urls = [u.strip() for u in url_path.read_text().splitlines() if u.strip()]
+            self.logger.info(f"Loaded {len(self.direct_urls):,} URLs to scrape")
+            return
+
+        # Normal listing-page crawl mode
         self.start_page = int(start_page)
         self.current_page = self.start_page
         self.max_pages_to_crawl = int(max_pages) if max_pages else None
@@ -51,6 +64,13 @@ class PitchforkSpider(scrapy.Spider):
             self.logger.info("No previous scrape file provided or found.")
 
     def start_requests(self):
+        # url_file mode: send each URL directly to parse_review (no playwright needed)
+        if self.url_file:
+            for url in self.direct_urls:
+                yield scrapy.Request(url=url, callback=self.parse_review)
+            return
+
+        # Normal mode: crawl listing pages with playwright
         for url in self.start_urls:
             yield scrapy.Request(
                 url=url,

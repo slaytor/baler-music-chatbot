@@ -23,7 +23,9 @@ ROBOTSTXT_OBEY = True
 
 # Configure a delay for requests for the same website (default: 0)
 # See https://docs.scrapy.org/en/latest/topics/settings.html#download-delay
-# DOWNLOAD_DELAY = 3
+DOWNLOAD_DELAY = 0.5
+AUTOTHROTTLE_ENABLED = True
+AUTOTHROTTLE_TARGET_CONCURRENCY = 4
 
 # The download timeout setting
 # DOWNLOAD_TIMEOUT = 15
