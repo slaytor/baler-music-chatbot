@@ -1,6 +1,7 @@
 import hashlib
 import json
 import logging
+import re
 import time
 
 import chromadb
@@ -104,7 +105,7 @@ class VectorDB:
                 all_documents.extend(items["documents"])
                 all_metadatas.extend(items["metadatas"])
 
-        tokenized_corpus = [doc.lower().split() for doc in all_documents]
+        tokenized_corpus = [re.findall(r"[a-z0-9]+(?:'[a-z]+)?(?:-[a-z]+)*", doc.lower()) for doc in all_documents]
         self.bm25_index = BM25Okapi(tokenized_corpus)
         self.bm25_corpus_metadatas = all_metadatas
         logging.info(f"BM25 index built with {len(all_documents)} documents.")
@@ -173,7 +174,7 @@ class VectorDB:
         """Returns top_k metadata records ranked by BM25 keyword score."""
         if self.bm25_index is None:
             return []
-        tokenized_query = query_text.lower().split()
+        tokenized_query = re.findall(r"[a-z0-9]+(?:'[a-z]+)?(?:-[a-z]+)*", query_text.lower())
         scores = self.bm25_index.get_scores(tokenized_query)
         top_indices = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)[
             :top_k
