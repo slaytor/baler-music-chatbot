@@ -24,6 +24,10 @@ GEMINI_MODEL = "gemini-2.0-flash"
 OLLAMA_MODEL = "mistral"
 OLLAMA_API_URL = os.getenv("OLLAMA_API_URL", "http://localhost:11434/api/generate")
 
+# Vertex AI (used for KB ingestion via LLM_PROVIDER=VERTEX)
+GCP_PROJECT_ID = os.getenv("GCP_PROJECT_ID", "clever-hangar-200602")
+GCP_REGION = os.getenv("GCP_REGION", "us-central1")
+
 # --- MUSIC SERVICE CONFIGURATION ---
 SPOTIFY_CLIENT_ID = os.getenv("SPOTIFY_CLIENT_ID")
 SPOTIFY_CLIENT_SECRET = os.getenv("SPOTIFY_CLIENT_SECRET")
