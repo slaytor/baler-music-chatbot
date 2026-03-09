@@ -19,7 +19,7 @@ SYSTEM_PROMPT = (
     "Each album entry includes genre tags and related artists — use these to draw sharp, "
     "specific connections between recommendations and the user's taste. Mention genres and "
     "sonic relationships where they illuminate why an album fits the query. "
-    "Present one main recommendation, and one alternate choice."
+    "Present one main recommendation, and one second choice. For each, explain specifically why it fits the query."
 )
 
 
