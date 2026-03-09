@@ -1,8 +1,10 @@
-import scrapy
-from dataclasses import dataclass, field
-from pathlib import Path
 import json
 import re
+from dataclasses import dataclass, field
+from pathlib import Path
+
+import scrapy
+
 
 @dataclass
 class ReviewItem:
@@ -16,11 +18,12 @@ class ReviewItem:
     release_year: str
     album_cover_url: str = field(default="N/A")
 
+
 class PitchforkSpider(scrapy.Spider):
     name = "pitchfork_reviews"
 
     def __init__(self, start_page=1, max_pages=None, previous_file=None, *args, **kwargs):
-        super(PitchforkSpider, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
         self.start_page = int(start_page)
         self.current_page = self.start_page
         self.max_pages_to_crawl = int(max_pages) if max_pages else None
@@ -33,7 +36,7 @@ class PitchforkSpider(scrapy.Spider):
         if previous_file and Path(previous_file).exists():
             self.logger.info(f"Loading previously seen URLs from {previous_file}")
             try:
-                with open(previous_file, 'r') as f:
+                with open(previous_file) as f:
                     for line in f:
                         try:
                             review = json.loads(line)
@@ -65,7 +68,12 @@ class PitchforkSpider(scrapy.Spider):
         review_links = response.css('a[href^="/reviews/albums/"]')
 
         for link in review_links:
-            review_url = response.urljoin(link.attrib['href'])
+            href = link.attrib['href']
+            # Skip the base listing URL and bare /reviews/albums/ links without a slug
+            if not re.match(r'^/reviews/albums/[^/?]+', href):
+                continue
+
+            review_url = response.urljoin(href)
 
             if self.seen_urls and review_url in self.seen_urls:
                 found_seen_url_on_page = True
@@ -99,8 +107,8 @@ class PitchforkSpider(scrapy.Spider):
             else:
                 self.logger.info("Reached the last page of reviews.")
         else:
-             if found_seen_url_on_page:
-                 self.logger.info("Stopping pagination because previously scraped reviews were found on this page.")
+            if found_seen_url_on_page:
+                self.logger.info("Stopping pagination because previously scraped reviews were found on this page.")
 
         await page.close()
 
@@ -110,25 +118,29 @@ class PitchforkSpider(scrapy.Spider):
             artist_name = response.css('div[class*="SplitScreenContentHeaderArtist"]::text').get()
 
         album_title = response.xpath('string(//h1[@data-testid="ContentHeaderHed"])').get()
-        score_str = response.css('p[class*="Rating-"]::text').get()
-        best_new_music_tag = response.css('p[class*="BestNewMusicText-"]').get()
-        is_bnm = best_new_music_tag is not None
         author = response.css('a[href*="/staff/"]::text').get()
-        
-        # --- FINAL, CORRECT SELECTOR ---
         album_cover_url = response.css('img[loading="eager"]::attr(src)').get()
 
-        release_year = response.css('time::text').get()
-        if not release_year:
-            info_items = response.css('div[class*="InfoSliceContent"] li::text').getall()
-            for item in info_items:
-                if item and (item.strip().startswith('19') or item.strip().startswith('20')):
-                    release_year = item.strip()
-                    break
+        # Score, BNM flag, and release year are JS-hydrated and wrong in SSR HTML.
+        # Parse them from the embedded JSON data instead.
+        score = 0.0
+        is_bnm = False
+        release_year = "N/A"
+
+        rating_match = re.search(
+            r'"musicRating":\{"isBestNewMusic":(true|false),"isBestNewReissue":(true|false),"score":(\d+\.?\d*)\}',
+            response.text,
+        )
+        if rating_match:
+            is_bnm = rating_match.group(1) == 'true'
+            score = float(rating_match.group(3))
+
+        year_match = re.search(r'"releaseYear":"(\d{4})"', response.text)
+        if year_match:
+            release_year = year_match.group(1)
 
         paragraphs = response.css('div[class*="body__inner-container"] p::text').getall()
         review_text = "\n".join(paragraphs)
-        score = float(score_str) if score_str else 0.0
 
         yield ReviewItem(
             artist=artist_name.strip() if artist_name else "N/A",
@@ -138,6 +150,6 @@ class PitchforkSpider(scrapy.Spider):
             review_url=response.url,
             review_text=review_text.strip(),
             author=author.strip() if author else "N/A",
-            release_year=release_year if release_year else "N/A",
-            album_cover_url=album_cover_url if album_cover_url else "N/A"
+            release_year=release_year,
+            album_cover_url=album_cover_url if album_cover_url else "N/A",
         )

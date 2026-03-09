@@ -4632,6 +4632,22 @@ w3lib = ">=1.17.0"
 zope-interface = ">=5.1.0"
 
 [[package]]
+name = "scrapy-playwright"
+version = "0.0.46"
+description = "Playwright integration for Scrapy"
+optional = false
+python-versions = ">=3.10"
+groups = ["main"]
+files = [
+    {file = "scrapy_playwright-0.0.46-py3-none-any.whl", hash = "sha256:8b20c504d773ec744ae81f5383989d04ba01dbf5e6c1991c0816e2f877398c54"},
+    {file = "scrapy_playwright-0.0.46.tar.gz", hash = "sha256:2efe31155b2bbbd13fb011f3c189c21a6f34409c7f7b958881780509ce14a6bb"},
+]
+
+[package.dependencies]
+playwright = ">=1.40"
+scrapy = ">=2.7"
+
+[[package]]
 name = "sentence-transformers"
 version = "3.4.1"
 description = "State-of-the-Art Text Embeddings"
@@ -5707,4 +5723,4 @@ testing = ["coverage[toml]", "zope.event", "zope.testing"]
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.12"
-content-hash = "afe109f26e9aced2ace6abaec5a336245171c7974fe85a2f8e61776c004510ac"
+content-hash = "625d1fe4c633f84f619323b970e93be5e1d708842c5193c9caf9926f3c365e62"
