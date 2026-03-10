@@ -227,7 +227,21 @@ class VectorDB:
         sorted_keys = sorted(
             rrf_scores.keys(), key=lambda k: rrf_scores[k], reverse=True
         )
-        return [meta_lookup[k] for k in sorted_keys[:top_k]]
+
+        # Keep only the highest-scoring chunk per album so long reviews don't
+        # crowd out albums with fewer chunks in the candidate pool.
+        seen_urls: set[str] = set()
+        deduped: list[dict] = []
+        for k in sorted_keys:
+            meta = meta_lookup[k]
+            url = meta.get("review_url")
+            if url and url not in seen_urls:
+                seen_urls.add(url)
+                deduped.append(meta)
+            if len(deduped) >= top_k:
+                break
+
+        return deduped
 
     def rerank(self, query_text: str, candidates: list) -> list:
         """
@@ -282,6 +296,55 @@ class VectorDB:
 
         return result
 
+    def apply_exclusion_filters(self, candidates: list, filters: dict) -> list:
+        """
+        Post-retrieval filter that removes candidates matching user-specified exclusions.
+        Checks artist_genres, artist, and release_year against the parsed filter dict.
+        """
+        exclude_genres = [g.lower() for g in filters.get("exclude_genres", [])]
+        exclude_artists = [a.lower() for a in filters.get("exclude_artists", [])]
+        max_year = filters.get("max_year")
+        min_year = filters.get("min_year")
+
+        if not any([exclude_genres, exclude_artists, max_year, min_year]):
+            return candidates
+
+        filtered = []
+        for meta in candidates:
+            # Genre filter — substring match against artist_genres and tags
+            if exclude_genres:
+                try:
+                    genres = [g.lower() for g in json.loads(meta.get("artist_genres", "[]"))]
+                except (json.JSONDecodeError, TypeError):
+                    genres = []
+                try:
+                    tags = [t.lower() for t in json.loads(meta.get("tags", "[]"))]
+                except (json.JSONDecodeError, TypeError):
+                    tags = []
+                all_terms = genres + tags
+                if any(eg in term for eg in exclude_genres for term in all_terms):
+                    continue
+
+            # Artist filter — exclude albums by the named artist
+            if exclude_artists:
+                artist = meta.get("artist", "").lower()
+                if any(ea in artist or artist in ea for ea in exclude_artists):
+                    continue
+
+            # Year filter
+            try:
+                year = int(meta.get("release_year", 0))
+            except (ValueError, TypeError):
+                year = 0
+            if max_year and year and year > max_year:
+                continue
+            if min_year and year and year < min_year:
+                continue
+
+            filtered.append(meta)
+
+        return filtered
+
     def expand_with_related_artists(self, query_text: str, top_results: list) -> list:
         """
         Takes the top results, extracts their related_artists, and fetches additional
@@ -330,10 +393,23 @@ class VectorDB:
         if enriched_df.empty:
             return 0
 
-        enriched_df["search_document"] = enriched_df.apply(
-            lambda row: f"Tags: {', '.join(row.get('tags', []))}. Review excerpt: {row.get('text_chunk', '')}",
-            axis=1,
-        )
+        def _build_search_document(row) -> str:
+            parts = []
+            genres = row.get("artist_genres", "[]")
+            if isinstance(genres, str):
+                try:
+                    genres = json.loads(genres)
+                except (json.JSONDecodeError, TypeError):
+                    genres = []
+            if genres:
+                parts.append(f"Genres: {', '.join(genres)}.")
+            tags = row.get("tags", [])
+            if tags:
+                parts.append(f"Tags: {', '.join(tags)}.")
+            parts.append(f"Review excerpt: {row.get('text_chunk', '')}")
+            return " ".join(parts)
+
+        enriched_df["search_document"] = enriched_df.apply(_build_search_document, axis=1)
 
         logging.info(f"Embedding {len(enriched_df)} new search documents...")
         embeddings = self.model.encode(

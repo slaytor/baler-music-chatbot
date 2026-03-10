@@ -93,14 +93,20 @@ async def get_recommendation_stream(query: Query, request: Request):
     query_logger.info(json.dumps(log_entry))
     # ----------------
 
+    # Extract exclusion filters and clean query from user input
+    filters = await llm.extract_filters(query.text)
+    search_query = filters.get("clean_query") or query.text
+
     # Hybrid retrieval: BM25 + vector search fused via RRF, then cross-encoder rerank
-    candidates = db.hybrid_search(query.text, top_k=50)
-    unique_matches = db.rerank(query.text, candidates)
+    candidates = db.hybrid_search(search_query, top_k=75)
+    candidates = db.apply_exclusion_filters(candidates, filters)
+    unique_matches = db.rerank(search_query, candidates)
 
     # Expand candidate pool with albums by related artists of top results
-    expanded = db.expand_with_related_artists(query.text, unique_matches[:5])
+    expanded = db.expand_with_related_artists(search_query, unique_matches[:5])
     if expanded:
-        expanded_reranked = db.rerank(query.text, expanded)
+        expanded = db.apply_exclusion_filters(expanded, filters)
+        expanded_reranked = db.rerank(search_query, expanded)
         existing_urls = {m.get("review_url") for m in unique_matches}
         for m in expanded_reranked:
             if m.get("review_url") not in existing_urls:

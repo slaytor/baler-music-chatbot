@@ -25,11 +25,35 @@ SYSTEM_PROMPT = (
 
 TAG_PROMPT = (
     "Generate 5-8 descriptive tags for the following music review excerpt. "
-    "Tags should cover genre, subgenre, mood/atmosphere, production style, and instrumentation where relevant. "
+    "{genre_context}"
+    "Focus on mood/atmosphere, production style, instrumentation, and sonic characteristics. "
     "Return ONLY a valid JSON array of lowercase strings. "
-    'Example: ["indie rock", "melancholic", "lo-fi", "guitar-driven", "introspective"]\n\n'
+    'Example: ["melancholic", "lo-fi", "tape-saturated", "guitar-driven", "claustrophobic"]\n\n'
     "Review excerpt: {chunk}"
 )
+
+_TAG_GENRE_CONTEXT = "The artist's genres are already known ({genres}), so avoid simply repeating them — "
+_TAG_NO_GENRE_CONTEXT = "Tags should cover genre, subgenre, mood/atmosphere, production style, and instrumentation. "
+
+FILTER_EXTRACTION_PROMPT = (
+    "Analyze this music recommendation query and extract any exclusion filters. "
+    "Return a JSON object with exactly these fields:\n"
+    '- "clean_query": the query with all exclusion/negative language removed (what the user WANTS)\n'
+    '- "exclude_genres": list of music genres to exclude, lowercase (e.g. ["hip-hop", "jazz"])\n'
+    '- "exclude_artists": list of artist names to exclude\n'
+    '- "max_year": integer or null — exclude albums released after this year ("nothing after 2010" → 2010)\n'
+    '- "min_year": integer or null — exclude albums released before this year ("only post-1990" → 1990)\n'
+    "If there are no exclusions, return empty lists and null for years. Return ONLY valid JSON.\n\n"
+    "Query: {query}"
+)
+
+_FILTER_DEFAULTS = {
+    "clean_query": None,
+    "exclude_genres": [],
+    "exclude_artists": [],
+    "max_year": None,
+    "min_year": None,
+}
 
 
 def _format_context_entry(c: dict) -> str:
@@ -101,9 +125,10 @@ class OllamaClient:
         self.api_url = config.OLLAMA_API_URL
         self.model = config.OLLAMA_MODEL
 
-    async def generate_tags_for_chunk(self, client: httpx.AsyncClient, chunk: str) -> list[str]:
+    async def generate_tags_for_chunk(self, client: httpx.AsyncClient, chunk: str, genres: list[str] | None = None) -> list[str]:
         """Generates semantic tags for a review chunk using Ollama."""
-        prompt = TAG_PROMPT.format(chunk=chunk)
+        genre_context = _TAG_GENRE_CONTEXT.format(genres=", ".join(genres)) if genres else _TAG_NO_GENRE_CONTEXT
+        prompt = TAG_PROMPT.format(chunk=chunk, genre_context=genre_context)
         payload = {"model": self.model, "prompt": prompt, "stream": False}
         try:
             response = await client.post(self.api_url, json=payload, timeout=60.0)
@@ -112,6 +137,10 @@ class OllamaClient:
             return _parse_tags(text)
         except Exception:
             return []
+
+    async def extract_filters(self, query: str) -> dict:
+        """Ollama stub — filter extraction not supported, returns no filters."""
+        return {**_FILTER_DEFAULTS, "clean_query": query}
 
     async def stream_response(
         self, query_text: str, context_chunks: list[dict]
@@ -167,9 +196,10 @@ class GeminiClient:
         self.credentials.refresh(auth_req)
         return {"Authorization": f"Bearer {self.credentials.token}"}
 
-    async def generate_tags_for_chunk(self, client: httpx.AsyncClient, chunk: str) -> list[str]:
+    async def generate_tags_for_chunk(self, client: httpx.AsyncClient, chunk: str, genres: list[str] | None = None) -> list[str]:
         """Generates semantic tags for a review chunk using Gemini."""
-        prompt = TAG_PROMPT.format(chunk=chunk)
+        genre_context = _TAG_GENRE_CONTEXT.format(genres=", ".join(genres)) if genres else _TAG_NO_GENRE_CONTEXT
+        prompt = TAG_PROMPT.format(chunk=chunk, genre_context=genre_context)
         api_url = f"{self.api_url_base}:generateContent"
         payload = {"contents": [{"parts": [{"text": prompt}]}]}
         try:
@@ -180,6 +210,26 @@ class GeminiClient:
             return _parse_tags(text)
         except Exception:
             return []
+
+    async def extract_filters(self, query: str) -> dict:
+        """Parses exclusion filters from a user query using a fast Gemini call."""
+        default = {**_FILTER_DEFAULTS, "clean_query": query}
+        prompt = FILTER_EXTRACTION_PROMPT.format(query=query)
+        api_url = f"{self.api_url_base}:generateContent"
+        payload = {"contents": [{"parts": [{"text": prompt}]}]}
+        try:
+            async with httpx.AsyncClient() as client:
+                headers = self._get_auth_headers()
+                response = await client.post(api_url, json=payload, headers=headers, timeout=10.0)
+                response.raise_for_status()
+                text = response.json()["candidates"][0]["content"]["parts"][0]["text"]
+            match = re.search(r"\{.*\}", text, re.DOTALL)
+            if not match:
+                return default
+            parsed = json.loads(match.group())
+            return {**default, **parsed}
+        except Exception:
+            return default
 
     async def stream_response(
         self, query_text: str, context_chunks: list[dict]
@@ -244,9 +294,10 @@ class VertexClient:
     def _get_auth_headers(self) -> dict:
         return _get_google_credentials()
 
-    async def generate_tags_for_chunk(self, client: httpx.AsyncClient, chunk: str) -> list[str]:
+    async def generate_tags_for_chunk(self, client: httpx.AsyncClient, chunk: str, genres: list[str] | None = None) -> list[str]:
         """Generates semantic tags for a review chunk using Vertex AI."""
-        prompt = TAG_PROMPT.format(chunk=chunk)
+        genre_context = _TAG_GENRE_CONTEXT.format(genres=", ".join(genres)) if genres else _TAG_NO_GENRE_CONTEXT
+        prompt = TAG_PROMPT.format(chunk=chunk, genre_context=genre_context)
         api_url = f"{self.api_url_base}:generateContent"
         payload = {"contents": [{"role": "user", "parts": [{"text": prompt}]}]}
         try:
@@ -257,6 +308,10 @@ class VertexClient:
             return _parse_tags(text)
         except Exception:
             return []
+
+    async def extract_filters(self, query: str) -> dict:
+        """Vertex stub — filter extraction not used in production (app uses GeminiClient)."""
+        return {**_FILTER_DEFAULTS, "clean_query": query}
 
     async def stream_response(
         self, query_text: str, context_chunks: list[dict]

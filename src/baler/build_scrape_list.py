@@ -1,6 +1,7 @@
 """
 Downloads albums.json from the-fork.vercel.app, compares against the local
-reviews.jsonl, and writes the missing Pitchfork review URLs to a file.
+reviews.jsonl (and reviews_new.jsonl if present), and writes the missing
+Pitchfork review URLs to a file.
 
 Usage:
     poetry run python -m src.baler.build_scrape_list
@@ -9,6 +10,7 @@ Output:
     scrape_list.txt  — one URL per line, ready for the spider's url_file param
 """
 
+import json
 import logging
 
 import httpx
@@ -18,20 +20,20 @@ from . import config
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
 ALBUMS_JSON_URL = "https://the-fork.vercel.app/albums.json"
-REVIEWS_JSONL = config.PROJECT_ROOT / "reviews.jsonl"
 OUTPUT_FILE = config.PROJECT_ROOT / "scrape_list.txt"
 PITCHFORK_BASE = "https://pitchfork.com"
 
+REVIEW_FILES = [
+    config.PROJECT_ROOT / "reviews.jsonl",
+    config.PROJECT_ROOT / "reviews_new.jsonl",
+]
 
-def load_existing_urls() -> set[str]:
-    if not REVIEWS_JSONL.exists():
-        logging.warning(f"{REVIEWS_JSONL} not found — treating all albums as new.")
+
+def load_urls_from_file(path) -> set[str]:
+    if not path.exists():
         return set()
-
-    import json
-
     urls = set()
-    with open(REVIEWS_JSONL) as f:
+    with open(path) as f:
         for line in f:
             line = line.strip()
             if not line:
@@ -42,8 +44,16 @@ def load_existing_urls() -> set[str]:
                     urls.add(url)
             except json.JSONDecodeError:
                 pass
-    logging.info(f"Loaded {len(urls):,} existing URLs from {REVIEWS_JSONL.name}")
+    logging.info(f"Loaded {len(urls):,} existing URLs from {path.name}")
     return urls
+
+
+def load_existing_urls() -> set[str]:
+    all_urls: set[str] = set()
+    for path in REVIEW_FILES:
+        all_urls |= load_urls_from_file(path)
+    logging.info(f"Total existing URLs across all files: {len(all_urls):,}")
+    return all_urls
 
 
 def main():

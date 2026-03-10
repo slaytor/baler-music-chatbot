@@ -15,15 +15,29 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 
 async def process_chunk_with_semaphore(semaphore, llm, client, chunk, row_data):
     async with semaphore:
-        tags = await llm.generate_tags_for_chunk(client, chunk)
+        genres = _parse_genres(row_data.get("artist_genres"))
+        tags = await llm.generate_tags_for_chunk(client, chunk, genres=genres or None)
         if tags:
             return {
                 "artist": row_data["artist"], "album_title": row_data["album_title"],
                 "score": row_data["score"], "review_url": row_data["review_url"],
                 "text_chunk": chunk, "tags": tags,
-                "album_cover_url": row_data.get("album_cover_url", "N/A")
+                "artist_genres": row_data.get("artist_genres", "[]"),
+                "album_cover_url": row_data.get("album_cover_url", "N/A"),
             }
         return None
+
+
+def _parse_genres(artist_genres) -> list[str]:
+    """Safely parse artist_genres from either a JSON string or a list."""
+    if not artist_genres:
+        return []
+    if isinstance(artist_genres, list):
+        return artist_genres
+    try:
+        return json.loads(artist_genres)
+    except (json.JSONDecodeError, TypeError):
+        return []
 
 def load_reviews_robustly(file_path):
     """Reads a JSONL file line by line, skipping any malformed lines."""
@@ -80,7 +94,7 @@ async def main():
         return
     logging.info(f"Found {len(unprocessed_df)} new reviews to process.")
 
-    CONCURRENCY_LIMIT = 5
+    CONCURRENCY_LIMIT = 30
     semaphore = asyncio.Semaphore(CONCURRENCY_LIMIT)
 
     with tqdm(total=len(unprocessed_df), desc="Processing reviews") as pbar:
