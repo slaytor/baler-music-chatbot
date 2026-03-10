@@ -93,12 +93,19 @@ async def get_recommendation_stream(query: Query, request: Request):
     query_logger.info(json.dumps(log_entry))
     # ----------------
 
-    # Extract exclusion filters and clean query from user input
-    filters = await llm.extract_filters(query.text)
-    search_query = filters.get("clean_query") or query.text
+    # Only call extract_filters if the query contains exclusion language
+    _EXCLUSION_HINTS = re.compile(
+        r"\b(no |not |don'?t |nothing |without |avoid |except |exclude |skip )", re.I
+    )
+    if _EXCLUSION_HINTS.search(query.text):
+        filters = await llm.extract_filters(query.text)
+        search_query = filters.get("clean_query") or query.text
+    else:
+        filters = {"exclude_genres": [], "exclude_artists": [], "max_year": None, "min_year": None}
+        search_query = query.text
 
     # Hybrid retrieval: BM25 + vector search fused via RRF, then cross-encoder rerank
-    candidates = db.hybrid_search(search_query, top_k=75)
+    candidates = db.hybrid_search(search_query, top_k=50)
     candidates = db.apply_exclusion_filters(candidates, filters)
     unique_matches = db.rerank(search_query, candidates)
 
