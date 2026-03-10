@@ -2,6 +2,7 @@ import hashlib
 import json
 import logging
 import re
+import threading
 import time
 
 import chromadb
@@ -65,7 +66,11 @@ class VectorDB:
         )
         logging.info("ChromaDB connection successful.")
 
-        self._build_bm25_index()
+        # BM25 index is built in the background so the server can start immediately.
+        # Requests during index build fall back to vector-only search.
+        self.bm25_index = None
+        self.bm25_corpus_metadatas = []
+        threading.Thread(target=self._build_bm25_index, daemon=True).start()
 
     def _wait_for_chroma(self, timeout: int = 60):
         """Waits for the ChromaDB server to be available."""
@@ -82,33 +87,38 @@ class VectorDB:
 
     def _build_bm25_index(self):
         """Fetch all documents from ChromaDB and build an in-memory BM25 index."""
-        count = self.get_count()
+        try:
+            count = self.get_count()
+        except Exception as e:
+            logging.error(f"BM25 index build failed (could not get count): {e}")
+            return
         if count == 0:
             logging.warning("Collection is empty — BM25 index not built.")
-            self.bm25_index = None
-            self.bm25_corpus_metadatas = []
             return
 
-        logging.info(f"Building BM25 index from {count} documents...")
-        all_documents = []
-        all_metadatas = []
-        batch_size = 250
+        logging.info(f"Building BM25 index from {count} documents (background)...")
+        try:
+            all_documents = []
+            all_metadatas = []
+            batch_size = 250
 
-        for offset in range(0, count, batch_size):
-            logging.info(f"Fetching BM25 corpus batch at offset {offset}...")
-            items = self.collection.get(
-                limit=batch_size,
-                offset=offset,
-                include=["metadatas", "documents"],
-            )
-            if items and items.get("documents"):
-                all_documents.extend(items["documents"])
-                all_metadatas.extend(items["metadatas"])
+            for offset in range(0, count, batch_size):
+                logging.info(f"Fetching BM25 corpus batch at offset {offset}...")
+                items = self.collection.get(
+                    limit=batch_size,
+                    offset=offset,
+                    include=["metadatas", "documents"],
+                )
+                if items and items.get("documents"):
+                    all_documents.extend(items["documents"])
+                    all_metadatas.extend(items["metadatas"])
 
-        tokenized_corpus = [re.findall(r"[a-z0-9]+(?:'[a-z]+)?(?:-[a-z]+)*", doc.lower()) for doc in all_documents]
-        self.bm25_index = BM25Okapi(tokenized_corpus)
-        self.bm25_corpus_metadatas = all_metadatas
-        logging.info(f"BM25 index built with {len(all_documents)} documents.")
+            tokenized_corpus = [re.findall(r"[a-z0-9]+(?:'[a-z]+)?(?:-[a-z]+)*", doc.lower()) for doc in all_documents]
+            self.bm25_index = BM25Okapi(tokenized_corpus)
+            self.bm25_corpus_metadatas = all_metadatas
+            logging.info(f"BM25 index ready with {len(all_documents)} documents.")
+        except Exception as e:
+            logging.error(f"BM25 index build failed: {e}")
 
     def get_count(self) -> int:
         """Returns the total number of items in the collection."""
