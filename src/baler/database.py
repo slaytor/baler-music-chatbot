@@ -423,6 +423,21 @@ class VectorDB:
             for _, row in enriched_df.iterrows()
         ]
 
+        # Deduplicate within the batch — identical review_url+text_chunk pairs
+        # (e.g. repeated boilerplate in a review) produce the same hash and
+        # would cause ChromaDB to reject the entire upsert.
+        seen_ids: set[str] = set()
+        unique_indices = []
+        for idx, doc_id in enumerate(ids):
+            if doc_id not in seen_ids:
+                seen_ids.add(doc_id)
+                unique_indices.append(idx)
+        if len(unique_indices) < len(ids):
+            dupes = len(ids) - len(unique_indices)
+            logging.warning(f"Dropping {dupes} duplicate chunk(s) within batch before upsert.")
+            enriched_df = enriched_df.iloc[unique_indices].reset_index(drop=True)
+            ids = [ids[i] for i in unique_indices]
+
         metadatas = []
         for _, row in enriched_df.iterrows():
             meta = row.to_dict()
