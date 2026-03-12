@@ -5,6 +5,10 @@ from dotenv import load_dotenv
 
 # --- PROJECT ROOT ---
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+LOG_DIR = PROJECT_ROOT / "logs"
+LOG_DIR.mkdir(exist_ok=True)
+DATA_DIR = PROJECT_ROOT / "data"
+DATA_DIR.mkdir(exist_ok=True)
 
 # --- LOAD ENVIRONMENT VARIABLES ---
 ENV_PATH = PROJECT_ROOT / ".env"
@@ -53,13 +57,14 @@ COLLECTION_NAME = "pitchfork_reviews"
 EMBEDDING_MODEL_NAME = "all-MiniLM-L6-v2"
 
 # --- SCRAPER & DATA CONFIG ---
-RAW_DATA_FILE = PROJECT_ROOT / "reviews.jsonl"
+RAW_DATA_FILE = DATA_DIR / "reviews.jsonl"
 S3_BUCKET_NAME = "baler-music-chatbot"
 S3_DAILY_PREFIX = "daily_scrapes/"
-PROCESSED_FILES_LOG = PROJECT_ROOT / ".processed_s3_files.log"
+PROCESSED_FILES_LOG = LOG_DIR / ".processed_s3_files.log"
 
 # --- PIPELINE BATCHING ---
 KB_BATCH_SIZE = 50
+KB_CONCURRENCY_LIMIT = 30
 INTER_BATCH_DELAY_SECONDS = 0
 
 # --- RETRIEVAL TUNING ---

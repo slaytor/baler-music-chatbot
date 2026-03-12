@@ -1,4 +1,4 @@
-# Get 'Forked 
+# Get 'Forked
 
 ### [Visit the Live App: get-forked.org](https://get-forked.org)
 
@@ -11,10 +11,11 @@ Unlike standard recommendation algorithms that rely on collaborative filtering (
 ## Key Features
 
 *   **Natural Language Search:** Ask for "dreamy shoegaze for a rainy tuesday" or "aggressive punk to clean my apartment to."
-*   **Deep Knowledge Base:** Powered by a vector database containing tens of thousands of review fragments.
+*   **Deep Knowledge Base:** ~27,000 Pitchfork album reviews, chunked and indexed as ~213,000 vector embeddings.
+*   **Hybrid Retrieval:** BM25 sparse search + dense vector search fused with Reciprocal Rank Fusion, then reranked by a cross-encoder for precision.
+*   **Related Artist Expansion:** Top results seed a second-pass retrieval over similar artists for deeper discovery.
 *   **Spotify Integration:** One-click access to listen to recommended albums directly on Spotify.
-*   **Infinite Discovery:** "Show more" functionality allows for deep diving into specific sub-genres.
-*   **Pretentious Mode:** Dynamic, randomized suggestion prompts that mimic the hyper-specific language of music nerds.
+*   **Show More:** Additional matches surfaced beyond the main recommendation for deeper genre exploration.
 
 ---
 
@@ -22,38 +23,28 @@ Unlike standard recommendation algorithms that rely on collaborative filtering (
 
 ### Core Application
 *   **Framework:** Python 3.12, FastAPI, Uvicorn
-*   **Frontend:** Vanilla JS, Tailwind CSS (No build step required)
-*   **Deployment:** Docker, Google Cloud Run (Serverless)
+*   **Frontend:** Vanilla JS, Tailwind CSS (no build step)
+*   **Deployment:** Docker, Google Cloud Run (serverless)
 
-### AI & Data
-*   **LLM:** Google Gemini 1.5 Flash (via `google-auth`)
-*   **Vector Database:** ChromaDB (Cloud)
+### AI & Retrieval
+*   **LLM:** Google Gemini 2.0 Flash (via `google-auth`)
+*   **Vector Database:** ChromaDB Cloud
 *   **Embeddings:** `all-MiniLM-L6-v2` (SentenceTransformers)
-*   **Music Data:** Spotify Web API
-
-### Automation & Pipeline
-*   **Scraping:** Scrapy & Playwright
-*   **Orchestration:** GitHub Actions
-*   **Storage:** AWS S3 (Raw data lake)
+*   **Sparse Search:** BM25 (in-memory, lazy-loaded on startup)
+*   **Reranking:** `cross-encoder/ms-marco-MiniLM-L6-v2`
+*   **Music Metadata:** Last.fm API (genres, related artists), Spotify Web API (album links)
 
 ---
 
-## The Nightly Data Pipeline
+## Knowledge Base
 
-One of the core strengths of this project is its self-updating knowledge base. The application stays current without manual intervention through a fully automated pipeline:
+The knowledge base is a static snapshot of ~27,000 Pitchfork album reviews scraped using a Scrapy/Playwright spider. Reviews are chunked, tagged with LLM-generated semantic descriptors, enriched with Last.fm genre and related artist data, and embedded into ChromaDB Cloud.
 
-1.  **Trigger:** Every night at 08:00 UTC, a **GitHub Action** spins up.
-2.  **Scrape:** It runs a custom **Scrapy/Playwright** spider to fetch the latest reviews published on Pitchfork that day.
-3.  **Archive:** Raw JSONL data is uploaded to an **AWS S3** bucket for long-term storage and versioning.
-4.  **Process:** The pipeline downloads the new data, cleans it, and chunks the text.
-5.  **Embed:** It generates vector embeddings for the new reviews using `SentenceTransformers`.
-6.  **Update:** The new vectors are upserted into the **Chroma Cloud** database, making them immediately available to the live application.
+The scraping and ingestion pipeline (Scrapy, GitHub Actions, AWS S3) exists in the repo but is not actively running — the knowledge base reflects the state as of early 2026.
 
 ---
 
 ## Local Development
-
-To run the application locally:
 
 1.  **Clone the repo:**
     ```bash
