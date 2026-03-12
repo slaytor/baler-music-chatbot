@@ -7,6 +7,7 @@ import google.auth.transport.requests
 import httpx
 
 from . import config
+from .utils import parse_json_list
 
 # --- CONSTANTS ---
 
@@ -58,15 +59,8 @@ _FILTER_DEFAULTS = {
 
 def _format_context_entry(c: dict) -> str:
     """Format a single context chunk with structured metadata for the LLM."""
-    try:
-        genres = json.loads(c.get("artist_genres", "[]")) if c.get("artist_genres") else []
-    except (json.JSONDecodeError, TypeError):
-        genres = []
-    try:
-        related = json.loads(c.get("related_artists", "[]")) if c.get("related_artists") else []
-    except (json.JSONDecodeError, TypeError):
-        related = []
-
+    genres = parse_json_list(c.get("artist_genres"))
+    related = parse_json_list(c.get("related_artists"))
     lines = [f"Album: '{c['album_title']}' by {c['artist']}"]
     if genres:
         lines.append(f"Genres: {', '.join(genres)}")
@@ -74,6 +68,21 @@ def _format_context_entry(c: dict) -> str:
         lines.append(f"Related artists: {', '.join(related[:5])}")
     lines.append(f"Review excerpt: ...{c['text_chunk']}...")
     return "\n".join(lines)
+
+
+def _format_sources(context_chunks: list[dict]) -> list[dict]:
+    """Build the unique sources list from context chunks for the NDJSON stream."""
+    sources = [
+        {
+            "album_title": c["album_title"],
+            "artist": c["artist"],
+            "url": c["review_url"],
+            "album_cover_url": c.get("album_cover_url", "N/A"),
+            "score": c.get("score", "N/A"),
+        }
+        for c in context_chunks
+    ]
+    return [dict(t) for t in {tuple(d.items()) for d in sources}]
 
 
 def _parse_tags(text: str) -> list[str]:
@@ -160,18 +169,7 @@ class OllamaClient:
                             if not data.get("done"):
                                 yield json.dumps({"chunk": data.get("response", "")}) + "\n"
 
-            sources = [
-                {
-                    "album_title": c["album_title"],
-                    "artist": c["artist"],
-                    "url": c["review_url"],
-                    "album_cover_url": c.get("album_cover_url", "N/A"),
-                    "score": c.get("score", "N/A"),
-                }
-                for c in context_chunks
-            ]
-            unique_sources = [dict(t) for t in {tuple(d.items()) for d in sources}]
-            yield json.dumps({"sources": unique_sources}) + "\n"
+            yield json.dumps({"sources": _format_sources(context_chunks)}) + "\n"
 
         except httpx.RequestError as e:
             yield json.dumps({"error": f"Could not connect to Ollama. Please ensure it's running. Details: {e!r}"}) + "\n"
@@ -259,18 +257,7 @@ class GeminiClient:
                             except Exception as e:
                                 yield json.dumps({"error": f"Error processing stream: {e}"}) + "\n"
 
-            sources = [
-                {
-                    "album_title": c["album_title"],
-                    "artist": c["artist"],
-                    "url": c["review_url"],
-                    "album_cover_url": c.get("album_cover_url", "N/A"),
-                    "score": c.get("score", "N/A"),
-                }
-                for c in context_chunks
-            ]
-            unique_sources = [dict(t) for t in {tuple(d.items()) for d in sources}]
-            yield json.dumps({"sources": unique_sources}) + "\n"
+            yield json.dumps({"sources": _format_sources(context_chunks)}) + "\n"
 
         except Exception as e:
             yield json.dumps({"error": f"An error occurred streaming: {e}"}) + "\n"
@@ -341,18 +328,7 @@ class VertexClient:
                             except Exception as e:
                                 yield json.dumps({"error": f"Error processing stream: {e}"}) + "\n"
 
-            sources = [
-                {
-                    "album_title": c["album_title"],
-                    "artist": c["artist"],
-                    "url": c["review_url"],
-                    "album_cover_url": c.get("album_cover_url", "N/A"),
-                    "score": c.get("score", "N/A"),
-                }
-                for c in context_chunks
-            ]
-            unique_sources = [dict(t) for t in {tuple(d.items()) for d in sources}]
-            yield json.dumps({"sources": unique_sources}) + "\n"
+            yield json.dumps({"sources": _format_sources(context_chunks)}) + "\n"
 
         except Exception as e:
             yield json.dumps({"error": f"An error occurred streaming: {e}"}) + "\n"

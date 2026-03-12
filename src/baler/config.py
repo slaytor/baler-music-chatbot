@@ -61,3 +61,8 @@ PROCESSED_FILES_LOG = PROJECT_ROOT / ".processed_s3_files.log"
 # --- PIPELINE BATCHING ---
 KB_BATCH_SIZE = 50
 INTER_BATCH_DELAY_SECONDS = 0
+
+# --- RETRIEVAL TUNING ---
+DB_FETCH_BATCH_SIZE = 250   # rows per ChromaDB page fetch
+RETRIEVAL_CANDIDATE_COUNT = 100  # BM25 + vector candidates before RRF fusion
+RRF_K = 60                  # RRF smoothing constant

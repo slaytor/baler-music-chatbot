@@ -58,6 +58,28 @@ app.add_middleware(
 # Determine the path to the static directory
 static_dir = Path(__file__).parent.parent.parent / "static"
 
+# --- QUERY FILTERING HELPERS ---
+
+_GENERIC_TOKENS = {
+    "about", "after", "again", "album", "along", "around", "based", "bring",
+    "could", "every", "feels", "genre", "going", "great", "group", "heavy",
+    "indie", "known", "label", "large", "later", "listen", "looking", "music",
+    "other", "people", "quite", "really", "releases", "since", "something",
+    "sound", "their", "there", "these", "those", "through", "times", "track",
+    "where", "which", "while", "would",
+}
+
+_EXCLUSION_HINTS = re.compile(
+    r"\b(no |not |don'?t |nothing |without |avoid |except |exclude |skip )", re.I
+)
+
+
+def _has_name_overlap(m: dict, query_tokens: set[str]) -> bool:
+    artist_tok = set(re.findall(r"\b[a-z]{5,}\b", m.get("artist", "").lower()))
+    title_tok = set(re.findall(r"\b[a-z]{5,}\b", m.get("album_title", "").lower()))
+    return bool(query_tokens & (artist_tok | title_tok))
+
+
 # --- API MODELS ---
 
 
@@ -94,9 +116,6 @@ async def get_recommendation_stream(query: Query, request: Request):
     # ----------------
 
     # Only call extract_filters if the query contains exclusion language
-    _EXCLUSION_HINTS = re.compile(
-        r"\b(no |not |don'?t |nothing |without |avoid |except |exclude |skip )", re.I
-    )
     if _EXCLUSION_HINTS.search(query.text):
         filters = await llm.extract_filters(query.text)
         search_query = filters.get("clean_query") or query.text
@@ -128,65 +147,11 @@ async def get_recommendation_stream(query: Query, request: Request):
 
     # Filter out albums where name-token overlap with the query is the likely reason
     # they surfaced (e.g. "Lotus Eater" ranking for "Flying Lotus" due to shared "lotus").
-    # Only meaningful tokens (5+ chars, not generic music/query words) are checked.
-    _GENERIC_TOKENS = {
-        "about",
-        "after",
-        "again",
-        "album",
-        "along",
-        "around",
-        "based",
-        "bring",
-        "could",
-        "every",
-        "feels",
-        "genre",
-        "going",
-        "great",
-        "group",
-        "heavy",
-        "indie",
-        "known",
-        "label",
-        "large",
-        "later",
-        "listen",
-        "looking",
-        "music",
-        "other",
-        "people",
-        "quite",
-        "really",
-        "releases",
-        "since",
-        "something",
-        "sound",
-        "their",
-        "there",
-        "these",
-        "those",
-        "through",
-        "times",
-        "track",
-        "where",
-        "which",
-        "while",
-        "would",
-    }
     query_tokens = {
         t for t in re.findall(r"\b[a-z]{5,}\b", query_lower) if t not in _GENERIC_TOKENS
     }
     if query_tokens:
-
-        def _has_name_overlap(m: dict) -> bool:
-            artist_tok = set(re.findall(r"\b[a-z]{5,}\b", m.get("artist", "").lower()))
-            title_tok = set(
-                re.findall(r"\b[a-z]{5,}\b", m.get("album_title", "").lower())
-            )
-            return bool(query_tokens & (artist_tok | title_tok))
-
-        unique_matches = [m for m in unique_matches if not _has_name_overlap(m)]
+        unique_matches = [m for m in unique_matches if not _has_name_overlap(m, query_tokens)]
 
     if not unique_matches:
 

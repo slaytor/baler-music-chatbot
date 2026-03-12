@@ -12,6 +12,7 @@ from rank_bm25 import BM25Okapi
 from sentence_transformers import CrossEncoder, SentenceTransformer
 
 from . import config
+from .utils import parse_json_list
 
 
 # --- HELPER FUNCTION FOR DEVICE SELECTION ---
@@ -100,7 +101,7 @@ class VectorDB:
         try:
             all_documents = []
             all_metadatas = []
-            batch_size = 250
+            batch_size = config.DB_FETCH_BATCH_SIZE
 
             for offset in range(0, count, batch_size):
                 logging.info(f"Fetching BM25 corpus batch at offset {offset}...")
@@ -135,7 +136,7 @@ class VectorDB:
                 return set()
 
             all_urls = set()
-            batch_size = 250
+            batch_size = config.DB_FETCH_BATCH_SIZE
             for offset in range(0, count, batch_size):
                 logging.info(f"Fetching records from offset {offset}...")
                 items = self.collection.get(
@@ -196,8 +197,8 @@ class VectorDB:
         Two-layer retrieval: BM25 (sparse) + ChromaDB vector (dense), fused with
         Reciprocal Rank Fusion (RRF). Returns top_k fused candidates.
         """
-        CANDIDATE_COUNT = 100
-        RRF_K = 60
+        CANDIDATE_COUNT = config.RETRIEVAL_CANDIDATE_COUNT
+        RRF_K = config.RRF_K
 
         # --- BM25 layer ---
         bm25_results = self.bm25_search(query_text, CANDIDATE_COUNT)
@@ -274,20 +275,13 @@ class VectorDB:
             url = meta.get("review_url")
             if url and url not in seen:
                 seen.add(url)
-                try:
-                    genres = json.loads(meta.get("artist_genres", "[]"))
-                    top_genres.update(g.lower() for g in genres)
-                except (json.JSONDecodeError, TypeError):
-                    pass
+                top_genres.update(g.lower() for g in parse_json_list(meta.get("artist_genres")))
             if len(seen) >= 5:
                 break
 
         # Re-score with a gentle genre coherence boost (0.1 per overlapping genre)
         def boosted(score: float, meta: dict) -> float:
-            try:
-                genres = {g.lower() for g in json.loads(meta.get("artist_genres", "[]"))}
-            except (json.JSONDecodeError, TypeError):
-                genres = set()
+            genres = {g.lower() for g in parse_json_list(meta.get("artist_genres"))}
             return score + len(genres & top_genres) * 0.1
 
         scored_boosted = sorted(
@@ -323,14 +317,8 @@ class VectorDB:
         for meta in candidates:
             # Genre filter — substring match against artist_genres and tags
             if exclude_genres:
-                try:
-                    genres = [g.lower() for g in json.loads(meta.get("artist_genres", "[]"))]
-                except (json.JSONDecodeError, TypeError):
-                    genres = []
-                try:
-                    tags = [t.lower() for t in json.loads(meta.get("tags", "[]"))]
-                except (json.JSONDecodeError, TypeError):
-                    tags = []
+                genres = [g.lower() for g in parse_json_list(meta.get("artist_genres"))]
+                tags = [t.lower() for t in parse_json_list(meta.get("tags"))]
                 all_terms = genres + tags
                 if any(eg in term for eg in exclude_genres for term in all_terms):
                     continue
@@ -366,13 +354,9 @@ class VectorDB:
 
         related_names: set[str] = set()
         for meta in top_results[:5]:
-            try:
-                related = json.loads(meta.get("related_artists", "[]"))
-                for name in related[:5]:
-                    if name.lower() not in top_artists:
-                        related_names.add(name)
-            except (json.JSONDecodeError, TypeError):
-                pass
+            for name in parse_json_list(meta.get("related_artists"))[:5]:
+                if name.lower() not in top_artists:
+                    related_names.add(name)
 
         if not related_names:
             return []

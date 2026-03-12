@@ -1,4 +1,19 @@
-# This file holds simple, reusable helper functions.
+import json
+
+
+def parse_json_list(value, default: list | None = None) -> list:
+    """Safely parse a value that is either a JSON string or already a list."""
+    if default is None:
+        default = []
+    if not value:
+        return default
+    if isinstance(value, list):
+        return value
+    try:
+        return json.loads(value)
+    except (json.JSONDecodeError, TypeError):
+        return default
+
 
 def chunk_text(text: str, chunk_size: int = 4, overlap: int = 1) -> list[str]:
     """Splits text into overlapping chunks of sentences."""

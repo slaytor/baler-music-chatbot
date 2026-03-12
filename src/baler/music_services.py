@@ -67,14 +67,6 @@ class LastFmClient:
         return {"artist_genres": genres, "related_artists": related}
 
 
-class SpotifyRateLimitError(Exception):
-    """Raised when Spotify returns 429. Carries the Retry-After value in seconds."""
-
-    def __init__(self, retry_after: int):
-        self.retry_after = retry_after
-        super().__init__(f"Spotify rate limit hit. Retry-After: {retry_after}s")
-
-
 class SpotifyClient:
     """
     Handles all interactions with the Spotify Web API.
@@ -172,94 +164,3 @@ class SpotifyClient:
                 print(f"An unexpected error occurred during Spotify search: {e}")
                 return None
 
-    async def get_album_metadata(self, album_title: str, artist: str) -> dict | None:
-        """
-        Fetches enrichment metadata for an album from Spotify:
-        - artist_genres: list of genre strings from the artist profile
-        - label: record label string from the album
-        - related_artists: list of related artist name strings
-
-        Returns None if the album cannot be found.
-        """
-        await self._get_access_token()
-        if not self.access_token:
-            return None
-
-        headers = {"Authorization": f"Bearer {self.access_token}"}
-        search_query = f'album:"{album_title}" artist:"{artist}"'
-        search_params = {"q": search_query, "type": "album", "limit": 1, "market": "US"}
-
-        def _check_rate_limit(response: httpx.Response):
-            if response.status_code == 429:
-                retry_after = int(response.headers.get("Retry-After", 30))
-                raise SpotifyRateLimitError(retry_after)
-
-        async with httpx.AsyncClient() as client:
-            try:
-                # 1. Search for the album to get album_id and artist_id
-                search_response = await client.get(
-                    f"{self.api_base_url}search", headers=headers, params=search_params
-                )
-                _check_rate_limit(search_response)
-                search_response.raise_for_status()
-                search_results = search_response.json()
-
-                albums = search_results.get("albums", {}).get("items", [])
-                if not albums:
-                    return None
-
-                album = albums[0]
-                album_id = album.get("id")
-                artist_items = album.get("artists", [])
-                artist_id = artist_items[0].get("id") if artist_items else None
-
-                if not album_id or not artist_id:
-                    return None
-
-                # 2. Fetch album details (label)
-                album_response = await client.get(
-                    f"{self.api_base_url}albums/{album_id}", headers=headers
-                )
-                _check_rate_limit(album_response)
-                album_response.raise_for_status()
-                album_data = album_response.json()
-                label = album_data.get("label") or "N/A"
-
-                # 3. Fetch artist details (genres)
-                artist_response = await client.get(
-                    f"{self.api_base_url}artists/{artist_id}", headers=headers
-                )
-                _check_rate_limit(artist_response)
-                artist_response.raise_for_status()
-                artist_data = artist_response.json()
-                genres = artist_data.get("genres", [])
-
-                # 4. Fetch related artists (404 is normal for smaller artists)
-                related_response = await client.get(
-                    f"{self.api_base_url}artists/{artist_id}/related-artists",
-                    headers=headers,
-                )
-                if related_response.status_code == 404:
-                    related_artists = []
-                else:
-                    _check_rate_limit(related_response)
-                    related_response.raise_for_status()
-                    related_data = related_response.json()
-                    related_artists = [
-                        a["name"] for a in related_data.get("artists", [])[:10]
-                    ]
-
-                return {
-                    "artist_genres": genres,
-                    "label": label,
-                    "related_artists": related_artists,
-                }
-
-            except SpotifyRateLimitError:
-                raise  # Let the caller handle rate limits
-            except httpx.RequestError as e:
-                print(f"Error fetching album metadata from Spotify: {e}")
-                return None
-            except Exception as e:
-                print(f"Unexpected error fetching album metadata: {e}")
-                return None
