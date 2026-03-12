@@ -18,7 +18,7 @@ def get_processed_files() -> set:
     if not config.PROCESSED_FILES_LOG.exists():
         return set()
     try:
-        with open(config.PROCESSED_FILES_LOG, "r") as f:
+        with open(config.PROCESSED_FILES_LOG) as f:
             return {line.strip() for line in f if line.strip()}
     except Exception as e:
         logging.error(f"Could not read {config.PROCESSED_FILES_LOG}: {e}")
@@ -104,7 +104,7 @@ def sync_s3_to_local():
                     new_reviews_from_this_file = 0
 
                     # --- THE FIX: Check for duplicates before appending ---
-                    with open(local_temp_path, "r") as temp_f:
+                    with open(local_temp_path) as temp_f:
                         for line in temp_f:
                             try:
                                 review = json.loads(line)

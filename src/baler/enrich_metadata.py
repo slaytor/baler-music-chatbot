@@ -22,8 +22,11 @@ import chromadb
 
 from . import config
 from .music_services import LastFmClient
+from .utils import parse_json_list
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logging.getLogger("chromadb").setLevel(logging.WARNING)
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 BATCH_SIZE = 250
 CONCURRENCY = 5
@@ -42,11 +45,7 @@ def get_chroma_collection():
 
 
 def build_search_document(meta: dict, lastfm_data: dict) -> str:
-    tags = (
-        json.loads(meta.get("tags", "[]"))
-        if isinstance(meta.get("tags"), str)
-        else meta.get("tags", [])
-    )
+    tags = parse_json_list(meta.get("tags"))
     genres = lastfm_data.get("artist_genres", [])
     related = lastfm_data.get("related_artists", [])
     label = meta.get("label", "N/A")
@@ -62,7 +61,7 @@ def build_search_document(meta: dict, lastfm_data: dict) -> str:
 
 async def enrich_album(collection, lastfm: LastFmClient, review_url: str, album_num: int) -> bool:
     """Fetch Last.fm metadata and overwrite artist_genres + related_artists for all chunks of one album."""
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
 
     result = await asyncio.wait_for(
         loop.run_in_executor(
@@ -124,7 +123,7 @@ async def enrich_album(collection, lastfm: LastFmClient, review_url: str, album_
 async def run_enrichment():
     collection = get_chroma_collection()
     lastfm = LastFmClient()
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     semaphore = asyncio.Semaphore(CONCURRENCY)
 
     count = collection.count()

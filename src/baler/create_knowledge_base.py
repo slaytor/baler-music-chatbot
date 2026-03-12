@@ -1,21 +1,22 @@
+import argparse
 import asyncio
+import json
 import logging
+
 import httpx
 import pandas as pd
-import argparse
-import json
 from tqdm import tqdm
 
 from . import config
 from .database import VectorDB
 from .llm import get_llm_client
-from .utils import chunk_text
+from .utils import chunk_text, parse_json_list
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
 async def process_chunk_with_semaphore(semaphore, llm, client, chunk, row_data):
     async with semaphore:
-        genres = _parse_genres(row_data.get("artist_genres"))
+        genres = parse_json_list(row_data.get("artist_genres"))
         tags = await llm.generate_tags_for_chunk(client, chunk, genres=genres or None)
         if tags:
             return {
@@ -28,21 +29,10 @@ async def process_chunk_with_semaphore(semaphore, llm, client, chunk, row_data):
         return None
 
 
-def _parse_genres(artist_genres) -> list[str]:
-    """Safely parse artist_genres from either a JSON string or a list."""
-    if not artist_genres:
-        return []
-    if isinstance(artist_genres, list):
-        return artist_genres
-    try:
-        return json.loads(artist_genres)
-    except (json.JSONDecodeError, TypeError):
-        return []
-
 def load_reviews_robustly(file_path):
     """Reads a JSONL file line by line, skipping any malformed lines."""
     records = []
-    with open(file_path, 'r') as f:
+    with open(file_path) as f:
         for i, line in enumerate(f):
             try:
                 records.append(json.loads(line))
@@ -94,8 +84,7 @@ async def main():
         return
     logging.info(f"Found {len(unprocessed_df)} new reviews to process.")
 
-    CONCURRENCY_LIMIT = 30
-    semaphore = asyncio.Semaphore(CONCURRENCY_LIMIT)
+    semaphore = asyncio.Semaphore(config.KB_CONCURRENCY_LIMIT)
 
     with tqdm(total=len(unprocessed_df), desc="Processing reviews") as pbar:
         for i in range(0, len(unprocessed_df), config.KB_BATCH_SIZE):

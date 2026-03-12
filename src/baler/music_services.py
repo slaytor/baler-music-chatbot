@@ -1,5 +1,6 @@
 import asyncio
 import base64
+import logging
 import time
 
 import httpx
@@ -106,10 +107,10 @@ class SpotifyClient:
                     time.time() + token_data.get("expires_in", 3600) - 60
                 )
             except httpx.RequestError as e:
-                print(f"Error requesting access token from Spotify: {e}")
+                logging.error(f"Error requesting Spotify access token: {e}")
                 self.access_token = None
             except Exception as e:
-                print(f"An unexpected error occurred during token refresh: {e}")
+                logging.error(f"Unexpected error during Spotify token refresh: {e}")
                 self.access_token = None
 
     async def get_album_spotify_url(self, album_title: str, artist: str) -> str | None:
@@ -124,43 +125,34 @@ class SpotifyClient:
 
         search_query = f'album:"{album_title}" artist:"{artist}"'
         search_params = {"q": search_query, "type": "album", "limit": 1, "market": "US"}
-
-        print(f"Searching Spotify for album with query: '{search_query}'")
-
-        search_url = f"{self.api_base_url}search"
+        logging.debug(f"Spotify search: '{search_query}'")
 
         async with httpx.AsyncClient() as client:
             try:
                 search_response = await client.get(
-                    search_url, headers=headers, params=search_params
+                    f"{self.api_base_url}search", headers=headers, params=search_params
                 )
                 search_response.raise_for_status()
                 search_results = search_response.json()
 
-                if not search_results.get("albums") or not search_results["albums"].get(
-                    "items"
-                ):
-                    print(
-                        f"Spotify search returned no albums for query: {search_query}"
-                    )
+                items = search_results.get("albums", {}).get("items", [])
+                if not items:
+                    logging.warning(f"Spotify: no albums found for '{search_query}'")
                     return None
 
-                album = search_results["albums"]["items"][0]
+                album = items[0]
                 album_url = album.get("external_urls", {}).get("spotify")
-
                 if album_url:
-                    print(f"Found album '{album['name']}' with URL: {album_url}")
+                    logging.info(f"Spotify: found '{album['name']}' → {album_url}")
                     return album_url
                 else:
-                    print(
-                        f"Found album '{album['name']}', but it has no external Spotify URL."
-                    )
+                    logging.warning(f"Spotify: '{album['name']}' has no external URL")
                     return None
 
             except httpx.RequestError as e:
-                print(f"Error communicating with Spotify: {e}")
+                logging.error(f"Spotify request error: {e}")
                 return None
             except Exception as e:
-                print(f"An unexpected error occurred during Spotify search: {e}")
+                logging.error(f"Unexpected Spotify search error: {e}")
                 return None
 

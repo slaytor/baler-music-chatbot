@@ -27,7 +27,7 @@ query_logger.addHandler(console_handler)
 
 # 2. File Handler (For local persistent storage)
 # We use the project root to store the log file
-log_file_path = config.PROJECT_ROOT / "user_queries.log"
+log_file_path = config.LOG_DIR / "user_queries.log"
 file_handler = logging.FileHandler(log_file_path)
 file_handler.setFormatter(logging.Formatter("%(message)s"))
 query_logger.addHandler(file_handler)
@@ -38,7 +38,7 @@ try:
     llm = get_llm_client(provider=config.APP_LLM_PROVIDER)
     spotify = SpotifyClient()
 except Exception as e:
-    print(f"FATAL: Failed to initialize services: {e}")
+    logging.critical(f"Failed to initialize services: {e}")
     exit(1)
 
 app = FastAPI(
